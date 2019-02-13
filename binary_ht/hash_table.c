@@ -2,13 +2,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 typedef struct hash_entry {
 	void  *key;
 	size_t key_s;
 	void  *data;
 	size_t data_s;
-	struct hash_entry_t *next;
+	struct hash_entry *next;
 } hash_entry;
 
 
@@ -20,6 +21,18 @@ typedef struct hash_table {
 	hash_free_t free_fn;		/* NULL by default 	   */
 } hash_table;
 
+
+uint32_t hash_func_default(void *key, size_t key_s)
+{
+	register uint32_t hash = 0;
+	register uint8_t *ptr = key;
+	register uint8_t ch;
+	for (ch = *ptr; key_s != 0; --key_s, ch = *++ptr) {
+		hash = (hash >> 1) + ((hash & 1) << 31);
+		hash += ch;
+	}
+	return hash;
+}
 
 /* Width must be != 0 and must fit in uint32_t */
 hash_table_t *hash_table_new(size_t width)
@@ -34,7 +47,7 @@ hash_table_t *hash_table_new(size_t width)
 	ht->arr_s = width;
 	ht->arr = calloc(ht->arr_s, sizeof(*ht->arr));
 	if (!ht->arr) {
-		free(ht)
+		free(ht);
 		return NULL;
 	}
 
@@ -43,6 +56,7 @@ hash_table_t *hash_table_new(size_t width)
 	ht->free_fn = NULL;
 	return ht;
 }
+
 
 void hash_table_clean(hash_table_t *ht)
 {
@@ -55,13 +69,14 @@ void hash_table_clean(hash_table_t *ht)
 			tmp = ptr;
 			ptr = ptr->next;
 			free(tmp->key);
-			if (free_fn)
-				free_fn(tmp->data);
+			if (ht->free_fn)
+				ht->free_fn(tmp->data);
 			free(tmp);
 		}
 	}
 	ht->n_entries = 0;
 }
+
 
 void hash_table_delete(hash_table_t *ht)
 {
@@ -71,11 +86,12 @@ void hash_table_delete(hash_table_t *ht)
 	free(ht);
 }
 
-int hash_table_set_hash_fn(hash_table_t *ht, hash_func_t *hash_fn)
+
+int hash_table_set_hash_fn(hash_table_t *ht, hash_func_t hash_fn)
 {
 	assert(ht);
 	
-	if (!ht->entries)
+	if (!ht->n_entries)
 		return -1;
 
 	if (hash_fn)
@@ -85,7 +101,8 @@ int hash_table_set_hash_fn(hash_table_t *ht, hash_func_t *hash_fn)
 	return 0;
 }
 
-int hash_table_set_free_fn(hash_table_t *ht, hash_free_t *free_fn)
+
+int hash_table_set_free_fn(hash_table_t *ht, hash_free_t free_fn)
 {
 	assert(ht);
 	ht->free_fn = free_fn;
@@ -104,19 +121,19 @@ static inline int hash_key_cmp(void *key_a, size_t key_a_s, void *key_b, size_t 
 	return memcmp(key_a, key_b, key_a_s);
 }
 
+
 static inline size_t hash_get_index(hash_table_t *ht, void *key, size_t key_s)
 {
 	return ht->hash_fn(key, key_s) % ht->arr_s;
 }
 
-/* Search for key in hash_table, return values by pointers data, data_s */
-int hash_search_data(hash_table_t *ht,
-		     void *key, size_t key_s,
+
+int hash_search_data(hash_table_t *ht, void *key, size_t key_s,
 		     void ***data, size_t **data_s)
 {
 	assert(ht);
 
-	hash_entry_t *ptr = hash_get_index(ht, key, key_s);
+	struct hash_entry *ptr = ht->arr[hash_get_index(ht, key, key_s)];
 	while (ptr) {
 		if (hash_key_cmp(ptr->key, ptr->key_s, key, key_s))
 			break;
@@ -135,3 +152,46 @@ int hash_search_data(hash_table_t *ht,
 	return 1;
 }
 
+
+int hash_insert_data(hash_table_t *ht, void *key, size_t key_s,
+		     void *data, size_t data_s, 
+		     void **old_data, size_t *old_data_s)
+{
+	assert(ht);
+
+	size_t index = hash_get_index(ht, key, key_s);
+	struct hash_entry *ptr = ht->arr[index];
+	if (!ptr) {
+		ptr = hash_entry_new(key, key_s, data, data_s);
+		if (!ptr)
+			return -1;
+		ht->arr[index] = ptr;
+		return 0;
+	}
+
+	while (1) {
+		if (hash_key_cmp(ptr->key, ptr->key_s, key, key_s)) {
+			if (ht->free_fn) {
+				ht->free_fn(ptr->data);
+				ptr->data   = data;
+				ptr->data_s = data_s;
+				return 1;
+			}
+			*old_data   = ptr->data;
+			*old_data_s = ptr->data_s;
+			ptr->data   = data;
+			ptr->data_s = data_s;
+			return 1;
+		}
+		if (!ptr->next) {
+			ptr->next = hash_entry_new(key, key_s, data, data_s);
+			if (!ptr->next)
+				return -1;
+			return 0;
+		}
+		ptr = ptr->next;
+	}
+
+	assert(0);
+	return -1;
+}
