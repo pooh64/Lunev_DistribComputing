@@ -60,6 +60,7 @@ hash_get_index(struct hash_table *ht, char *key, size_t key_s)
 static inline int hash_cmp_keys(char *key_1, size_t key_1_s,
 				char *key_2, size_t key_2_s)
 {
+	printf("%s %s\n", key_1, key_2);
 	if (key_1_s != key_2_s)
 		return 1;
 	return memcmp(key_1, key_2, key_1_s);
@@ -82,6 +83,8 @@ hash_table_t *hash_table_new(size_t n_buckets)
 		free(ht);
 		return NULL;
 	}
+
+	ht->n_entries = 0;
 	return ht;
 }
 
@@ -93,6 +96,7 @@ void hash_table_clean(hash_table_t *ht)
 			struct hash_entry *tmp = ptr;
 			ptr = ptr->next;
 			hash_entry_delete(tmp);
+			ht->n_entries--;
 		}
 	}
 }
@@ -107,6 +111,8 @@ void hash_table_delete(hash_table_t *ht)
 
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
+	printf("Running insert: %s\n", key);
+
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
@@ -117,6 +123,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 		if (data_r)
 			*data_r = &ptr->data;
 		ht->arr[index] = ptr;
+		ht->n_entries++;
 		return 0;
 	}
 
@@ -134,13 +141,16 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	ptr->next = hash_entry_new(key, key_s, 0);
 	if (!ptr)
 		return -1;
+	ht->n_entries++;
 	if (data_r)
 		*data_r = &ptr->next->data;
 	return 0;
 }
 
-int hash_delete_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
+int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 {
+	printf("Running delete: %s\n", key);
+
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
@@ -152,9 +162,8 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	while (1) {
 		if (!hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
 			*prev_next = ptr->next;
-			if (data_r)
-				*data_r = &ptr->data;
 			hash_entry_delete(ptr);
+			ht->n_entries--;
 			return 1;
 		}
 		if (!ptr->next)
@@ -168,6 +177,8 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 
 int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
+	printf("Running search: %s\n", key);
+
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
