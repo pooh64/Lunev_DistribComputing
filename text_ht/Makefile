@@ -9,7 +9,8 @@ $(BUILD_DIR)/%.o: %.c
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR)/*.o *.d *.gcov
+	rm -R $(BUILD_DIR)
+	rm -rf *.o *.d *.gcov
 
 HASH_UTEST_SRC := hash_table_utest.c hash_table.c
 HASH_UTEST_OBJ := $(addprefix $(BUILD_DIR)/,$(HASH_UTEST_SRC:.c=.o))

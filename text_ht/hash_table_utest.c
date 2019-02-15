@@ -2,11 +2,21 @@
 #include <assert.h>
 #include <stdlib.h>
 
-int hash_one_word_test()
+
+int hash_ctor_test()
+{
+	hash_table_t *ht = hash_table_new(0);
+	assert(ht == NULL);
+
+	return 0;
+}
+
+int hash_simple_test()
 {
 	hash_table_t *ht = hash_table_new(64);
 
 	char word[] = "word";
+	char phrase[] = "int main";
 	size_t *data = NULL;
 	int ret;
 
@@ -14,8 +24,16 @@ int hash_one_word_test()
 	assert(ret == 0);
 	ret = hash_search_data(ht, word, sizeof(word), &data);
 	assert(ret == 1);
+	ret = hash_insert_data(ht, phrase, sizeof(phrase), &data);
+	assert(ret == 0);
+	ret = hash_search_data(ht, phrase, sizeof(phrase), &data);
+	assert(ret == 1);
 	ret = hash_delete_data(ht, word, sizeof(word));
 	assert(ret == 1);
+	ret = hash_search_data(ht, word, sizeof(word), &data);
+	assert(ret == 0);
+	ret = hash_delete_data(ht, word, sizeof(word));
+	assert(ret == 0);
 
 	hash_table_delete(ht);
 
@@ -23,9 +41,10 @@ int hash_one_word_test()
 }
 
 
-#define STRESS_WORD_S 8
+#define STRESS_WORD_S 4
 #define STRESS_WORD_N 32
-#define STRESS_CYCLES 4096
+#define STRESS_CYCLES 4096 * 8
+#define STRESS_HASH_S 1024
 
 struct stress_word {
 	char buf[STRESS_WORD_S];
@@ -47,7 +66,7 @@ int hash_rand_stress_test()
 {
 	struct stress_word words[STRESS_WORD_N] = {};
 
-	hash_table_t *ht = hash_table_new(4096);
+	hash_table_t *ht = hash_table_new(STRESS_HASH_S);
 	if (!ht)
 		return 1;
 	
@@ -78,6 +97,9 @@ int hash_rand_stress_test()
 			ret = hash_search_data(ht,
 				words[i].buf, words[i].cur_s, &words[i].data);
 			assert(ret == 0);
+			ret = hash_delete_data(ht,
+				words[i].buf, words[i].cur_s);
+			assert(ret == 0);
 		}
 
 		for (size_t i = 0; i != STRESS_WORD_N; ++i) {
@@ -96,7 +118,8 @@ int hash_rand_stress_test()
 
 int main()
 {
-	hash_one_word_test();
+	hash_ctor_test();
+	hash_simple_test();
 	hash_rand_stress_test();
 	return 0;
 }

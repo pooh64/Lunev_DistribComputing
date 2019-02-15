@@ -5,6 +5,13 @@
 #include <assert.h>
 #include <stdio.h>
 
+//#define ENABLE_TRACE
+#ifdef ENABLE_TRACE
+#define TRACE(arg) arg
+#else
+#define TRACE(arg)
+#endif
+
 struct hash_entry {
 	char  *key;
 	size_t key_s;
@@ -60,7 +67,7 @@ hash_get_index(struct hash_table *ht, char *key, size_t key_s)
 static inline int hash_cmp_keys(char *key_1, size_t key_1_s,
 				char *key_2, size_t key_2_s)
 {
-	printf("%s %s\n", key_1, key_2);
+	TRACE(printf("%s %s\n", key_1, key_2));
 	if (key_1_s != key_2_s)
 		return 1;
 	return memcmp(key_1, key_2, key_1_s);
@@ -111,7 +118,7 @@ void hash_table_delete(hash_table_t *ht)
 
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	printf("Running insert: %s\n", key);
+	TRACE(printf("Running insert: %s\n", key));
 
 	size_t index = hash_get_index(ht, key, key_s);
 
@@ -149,7 +156,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 
 int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 {
-	printf("Running delete: %s\n", key);
+	TRACE(printf("Running delete: %s\n", key));
 
 	size_t index = hash_get_index(ht, key, key_s);
 
@@ -177,7 +184,7 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 
 int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	printf("Running search: %s\n", key);
+	TRACE(printf("Running search: %s\n", key));
 
 	size_t index = hash_get_index(ht, key, key_s);
 
