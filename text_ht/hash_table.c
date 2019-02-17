@@ -5,12 +5,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-//#define ENABLE_TRACE
-#ifdef ENABLE_TRACE
-#define TRACE(arg) arg
-#else
-#define TRACE(arg)
-#endif
+#define TRACE_LINE fprintf(stderr, "trace_line: %d\n", __LINE__);
 
 struct hash_entry {
 	char  *key;
@@ -33,12 +28,12 @@ static struct hash_entry *hash_entry_new(char *key, size_t key_s, size_t data)
 
 	entry->key_s = key_s;
 	entry->key = malloc(key_s);
+
 	if (!entry->key) {
 		free(entry);
 		return NULL;
 	}
 	memcpy(entry->key, key, key_s);
-
 	entry->data = data;
 	entry->next = NULL;
 	return entry;
@@ -67,7 +62,6 @@ hash_get_index(struct hash_table *ht, char *key, size_t key_s)
 static inline int hash_cmp_keys(char *key_1, size_t key_1_s,
 				char *key_2, size_t key_2_s)
 {
-	TRACE(printf("%s %s\n", key_1, key_2));
 	if (key_1_s != key_2_s)
 		return 1;
 	return memcmp(key_1, key_2, key_1_s);
@@ -118,8 +112,6 @@ void hash_table_delete(hash_table_t *ht)
 
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	TRACE(printf("Running insert: %s\n", key));
-
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
@@ -131,6 +123,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 			*data_r = &ptr->data;
 		ht->arr[index] = ptr;
 		ht->n_entries++;
+
 		return 0;
 	}
 
@@ -146,8 +139,9 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	}
 
 	ptr->next = hash_entry_new(key, key_s, 0);
-	if (!ptr)
+	if (!ptr->next)
 		return -1;
+
 	ht->n_entries++;
 	if (data_r)
 		*data_r = &ptr->next->data;
@@ -156,8 +150,6 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 
 int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 {
-	TRACE(printf("Running delete: %s\n", key));
-
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
@@ -184,8 +176,6 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 
 int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	TRACE(printf("Running search: %s\n", key));
-
 	size_t index = hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];

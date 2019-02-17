@@ -7,7 +7,13 @@
 int hash_ctor_test()
 {
 	hash_table_t *ht = hash_table_new(0);
-	assert(ht == NULL);
+	assert(!ht);
+
+	for (int i = 4096; i != 0; i--) {
+		ht = hash_table_new(1024);
+		if (ht)
+			hash_table_delete(ht);
+	}
 
 	return 0;
 }
