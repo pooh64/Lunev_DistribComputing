@@ -282,5 +282,5 @@ int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 		*key_s = iter->entry->key_s;
 	if (data_r)
 		*data_r = &iter->entry->data;
-	return 1;
+	return 0;
 }

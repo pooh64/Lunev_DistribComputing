@@ -83,7 +83,7 @@ int hash_iter_test()
 	size_t sum = 0;
 	do {
 		ret = hash_iter_data(iter, &key, &key_s, &data);
-		assert(ret == 1);
+		assert(ret == 0);
 		sum += *data;
 	} while (hash_iter_next(iter));
 		
