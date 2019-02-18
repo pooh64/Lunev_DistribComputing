@@ -20,6 +20,12 @@ struct hash_table {
 	size_t n_entries;
 };
 
+struct hash_iter {
+	struct hash_table *ht;
+	struct hash_entry *entry;
+	size_t index;
+};
+
 static struct hash_entry *hash_entry_new(char *key, size_t key_s, size_t data)
 {
 	struct hash_entry *entry = malloc(sizeof(*entry));
@@ -195,3 +201,56 @@ int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 
 	return 0;
 }
+
+
+struct hash_iter_t *hash_iter_new(hash_table_t *ht)
+{
+	struct hash_iter *iter = malloc(*iter);
+	if (!iter)
+		return NULL;
+	iter->ht = ht;
+	iter->entry = NULL;
+	iter->index = 0;
+	return iter;
+}
+
+void hash_iter_delete(hash_iter_t *iter)
+{
+	free(iter);
+}
+
+int hash_iter_begin(hash_iter_t *iter)
+{
+	for (size_t i = 0; i < iter->ht->arr_s; i++) {
+		if (iter->ht->arr[i]) {
+			iter->entry = iter->ht->arr[i];
+			iter->index = i;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int hash_iter_next(hash_iter_t *iter)
+{
+	if (!ht->entry)
+		return -1;
+
+	if (ht->entry->next) {
+		ht->entry = ht->entry->next;
+		return 1;
+	}
+
+	for (size_t i = iter->index + 1; i < iter->ht->arr_s; i++) {
+		if (iter->ht->arr[i]) {
+			iter->entry = iter->ht->arr[i];
+			iter->index = i;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int hash_iter_data(hash_iter_t *iter, const char **key, size_t *data);
