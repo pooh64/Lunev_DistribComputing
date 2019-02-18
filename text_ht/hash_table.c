@@ -54,7 +54,7 @@ static inline void hash_entry_delete(struct hash_entry *entry)
 static inline uint32_t hash_hashfunc(char *key, size_t key_s)
 {
 	uint32_t hash = 5381;
-	for (; key_s != 0; ++key, --key_s)
+	for (; key_s != 0; key++, key_s--)
 		hash = hash * 33 + *key;
 	return hash;
 }
@@ -74,11 +74,10 @@ static inline int hash_cmp_keys(char *key_1, size_t key_1_s,
 }
 
 
-
 hash_table_t *hash_table_new(size_t n_buckets)
 {
 	if (!n_buckets)
-		return NULL;
+		n_buckets = HASH_TABLE_DEFAULT_SIZE;
 
 	struct hash_table *ht = malloc(sizeof(*ht));
 	if (!ht)
@@ -114,7 +113,6 @@ void hash_table_delete(hash_table_t *ht)
 	free(ht->arr);
 	free(ht);
 }
-
 
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
@@ -202,10 +200,29 @@ int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	return 0;
 }
 
-
-struct hash_iter_t *hash_iter_new(hash_table_t *ht)
+void hash_table_dump_distrib(hash_table_t *ht)
 {
-	struct hash_iter *iter = malloc(*iter);
+	fprintf(stderr, "---hash_table_dump_distrib:---\n");
+	fprintf(stderr, "n_buckets=%lu\n", ht->arr_s);
+	fprintf(stderr, "n_entries=%lu\n", ht->n_entries);
+
+	for (size_t i = 0; i < ht->arr_s; i++) {
+		size_t len = 0;
+		struct hash_entry *ptr = ht->arr[i];
+		while (ptr) {
+			ptr = ptr->next;
+			len++;
+		}
+		fprintf(stderr, "bucket[%lu]  %lu\n", i, len);
+	}
+
+	fprintf(stderr, "---hash_table_dump_distrib/---\n");
+}
+
+
+hash_iter_t *hash_iter_new(hash_table_t *ht)
+{
+	struct hash_iter *iter = malloc(sizeof(*iter));
 	if (!iter)
 		return NULL;
 	iter->ht = ht;
@@ -234,11 +251,11 @@ int hash_iter_begin(hash_iter_t *iter)
 
 int hash_iter_next(hash_iter_t *iter)
 {
-	if (!ht->entry)
+	if (!iter->entry)
 		return -1;
 
-	if (ht->entry->next) {
-		ht->entry = ht->entry->next;
+	if (iter->entry->next) {
+		iter->entry = iter->entry->next;
 		return 1;
 	}
 
@@ -253,4 +270,17 @@ int hash_iter_next(hash_iter_t *iter)
 	return 0;
 }
 
-int hash_iter_data(hash_iter_t *iter, const char **key, size_t *data);
+int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s, 
+		   size_t **data_r)
+{
+	if (!iter->entry)
+		return -1;
+
+	if (key)	
+		*key  = iter->entry->key;
+	if (key_s)
+		*key_s = iter->entry->key_s;
+	if (data_r)
+		*data_r = &iter->entry->data;
+	return 1;
+}

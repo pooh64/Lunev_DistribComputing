@@ -21,7 +21,7 @@ build_utest: $(BUILD_DIR)/hash_utest
 $(BUILD_DIR)/hash_utest: $(HASH_UTEST_OBJ)
 	$(CC) $(LDFLAGS) $(HASH_UTEST_OBJ) -o $@
 
-FAULT_TEST_SRC := hash_table_utest.c hash_table.c fault_injector.c
+FAULT_TEST_SRC := hash_fault_test.c hash_table.c fault_injector.c
 FAULT_TEST_OBJ := $(addprefix $(BUILD_DIR)/,$(FAULT_TEST_SRC:.c=.o))
 .PHONY: build_fault_test
 build_fault_test: $(BUILD_DIR)/fault_test
