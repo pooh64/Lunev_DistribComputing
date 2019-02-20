@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 int hash_simple_test()
 {
@@ -46,6 +47,27 @@ size_t rand_stress_word(char *buf, size_t buf_s)
 	return rand_s;
 }
 
+int foreach_sum(const char *key, size_t key_s, size_t *data, void *arg)
+{
+	*(size_t*) arg += *data;
+	return 0;
+}
+
+struct hash_item {
+	const char *key;
+	size_t key_s;
+	size_t *data;
+};
+
+int foreach_search(const char *key, size_t key_s, size_t *data, void *arg)
+{
+	struct hash_item *item = arg;
+	if (item->key_s == key_s && !memcmp(item->key, key, key_s)) {
+		item->data = data;
+		return 1;
+	}
+	return 0;
+}
 
 int hash_iter_test()
 {
@@ -95,10 +117,57 @@ int hash_iter_test()
 	return 0;
 }
 
+int hash_foreach_test()
+{
+	hash_table_t *ht = hash_table_new(1024);
+	assert(ht);
+
+	char buf[16] = {};
+	size_t checksum = 0;
+	int ret;
+	size_t *data;
+
+	/* Fill table with random words */
+	for (size_t i = 0; i != 4096; ++i) {
+		rand_stress_word(buf, sizeof(buf));
+		ret = hash_insert_data(ht, buf, sizeof(buf), &data);
+		assert(ret != -1);
+		if (!ret) {
+			*data = (size_t) rand();
+			checksum += *data;
+		}
+	}
+
+	/* Insert one more word */
+	char test_word[] = "word";
+	ret = hash_insert_data(ht, test_word, sizeof(test_word), &data);
+	assert(ret != -1);
+	*data = rand();
+	size_t test_data = *data;
+	checksum += test_data;
+
+	/* Try to find test_word */
+	struct hash_item test_item = { .key = test_word, .key_s = sizeof(test_word), .data = NULL };
+	ret = hash_foreach_data(ht, &foreach_search, &test_item);
+	assert(ret == 1);
+	assert(*test_item.data == test_data);
+
+	/* Check sum */
+	size_t sum = 0;
+	ret = hash_foreach_data(ht, &foreach_sum, &sum);
+	assert(ret == 0);
+	assert(sum == checksum);
+
+	hash_table_delete(ht);
+
+	return 0;
+}
+
 
 int main()
 {
 	hash_simple_test();
 	hash_iter_test();
+	hash_foreach_test();
 	return 0;
 }

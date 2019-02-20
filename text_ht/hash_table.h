@@ -52,4 +52,12 @@ int hash_iter_next(hash_iter_t *iter);
 int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 		   size_t **data_r);
 
+/* Foreach function prototype */
+typedef int (hash_foreach_func_t)
+	    (const char *key, size_t key_s, size_t *data, void *arg);
+
+/* Execute func for each entry in hash table
+ * If func ret != 0 return ret */
+int hash_foreach_data(hash_table_t *ht, hash_foreach_func_t *func, void *arg);
+
 #endif /* HASH_TABLE_H_ */

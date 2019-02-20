@@ -26,7 +26,7 @@ struct hash_iter {
 	size_t index;
 };
 
-static struct hash_entry *hash_entry_new(char *key, size_t key_s, size_t data)
+static struct hash_entry *_hash_entry_new(char *key, size_t key_s, size_t data)
 {
 	struct hash_entry *entry = malloc(sizeof(*entry));
 	if (!entry)
@@ -45,13 +45,13 @@ static struct hash_entry *hash_entry_new(char *key, size_t key_s, size_t data)
 	return entry;
 }
 
-static inline void hash_entry_delete(struct hash_entry *entry)
+static inline void _hash_entry_delete(struct hash_entry *entry)
 {
 	free(entry->key);
 	free(entry);
 }
 
-static inline uint32_t hash_hashfunc(char *key, size_t key_s)
+static inline uint32_t _hash_hashfunc(char *key, size_t key_s)
 {
 	uint32_t hash = 5381;
 	for (; key_s != 0; key++, key_s--)
@@ -60,13 +60,13 @@ static inline uint32_t hash_hashfunc(char *key, size_t key_s)
 }
 
 static inline size_t 
-hash_get_index(struct hash_table *ht, char *key, size_t key_s)
+_hash_get_index(struct hash_table *ht, char *key, size_t key_s)
 {
-	return hash_hashfunc(key, key_s) % ht->arr_s;
+	return _hash_hashfunc(key, key_s) % ht->arr_s;
 }
 
-static inline int hash_cmp_keys(char *key_1, size_t key_1_s,
-				char *key_2, size_t key_2_s)
+static inline int _hash_cmp_keys(char *key_1, size_t key_1_s,
+				 char *key_2, size_t key_2_s)
 {
 	if (key_1_s != key_2_s)
 		return 1;
@@ -101,7 +101,7 @@ void hash_table_clean(hash_table_t *ht)
 		while (ptr) {
 			struct hash_entry *tmp = ptr;
 			ptr = ptr->next;
-			hash_entry_delete(tmp);
+			_hash_entry_delete(tmp);
 			ht->n_entries--;
 		}
 	}
@@ -116,11 +116,11 @@ void hash_table_delete(hash_table_t *ht)
 
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	size_t index = hash_get_index(ht, key, key_s);
+	size_t index = _hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
 	if (!ptr) {
-		ptr = hash_entry_new(key, key_s, 0);
+		ptr = _hash_entry_new(key, key_s, 0);
 		if (!ptr)
 			return -1;
 		if (data_r)
@@ -132,7 +132,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	}
 
 	while (1) {
-		if (!hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
+		if (!_hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
 			if (data_r)
 				*data_r = &ptr->data;
 			return 1;
@@ -142,7 +142,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 		ptr = ptr->next;
 	}
 
-	ptr->next = hash_entry_new(key, key_s, 0);
+	ptr->next = _hash_entry_new(key, key_s, 0);
 	if (!ptr->next)
 		return -1;
 
@@ -154,7 +154,7 @@ int hash_insert_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 
 int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 {
-	size_t index = hash_get_index(ht, key, key_s);
+	size_t index = _hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
 	if (!ptr)
@@ -163,9 +163,9 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 	struct hash_entry **prev_next = &ht->arr[index];
 
 	while (1) {
-		if (!hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
+		if (!_hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
 			*prev_next = ptr->next;
-			hash_entry_delete(ptr);
+			_hash_entry_delete(ptr);
 			ht->n_entries--;
 			return 1;
 		}
@@ -180,14 +180,14 @@ int hash_delete_data(hash_table_t *ht, char *key, size_t key_s)
 
 int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 {
-	size_t index = hash_get_index(ht, key, key_s);
+	size_t index = _hash_get_index(ht, key, key_s);
 
 	struct hash_entry *ptr = ht->arr[index];
 	if (!ptr)
 		return 0;
 
 	while (1) {
-		if (!hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
+		if (!_hash_cmp_keys(ptr->key, ptr->key_s, key, key_s)) {
 			if (data_r)
 				*data_r = &ptr->data;
 			return 1;
@@ -236,17 +236,43 @@ void hash_iter_delete(hash_iter_t *iter)
 	free(iter);
 }
 
-int hash_iter_begin(hash_iter_t *iter)
+
+static inline int _hash_search_begin(struct hash_table *ht,
+		  struct hash_entry **entry, size_t *index)
 {
-	for (size_t i = 0; i < iter->ht->arr_s; i++) {
-		if (iter->ht->arr[i]) {
-			iter->entry = iter->ht->arr[i];
-			iter->index = i;
+	for (size_t i = 0; i < ht->arr_s; i++) {
+		if (ht->arr[i]) {
+			*entry = ht->arr[i];
+			*index = i;
 			return 1;
 		}
 	}
 
 	return 0;
+}
+
+static inline int _hash_search_next(struct hash_table *ht,
+		  struct hash_entry **entry, size_t *index)
+{
+	if ((*entry)->next) {
+		*entry = (*entry)->next;
+		return 1;
+	}
+
+	for (size_t i = *index + 1; i < ht->arr_s; i++) {
+		if (ht->arr[i]) {
+			*entry = ht->arr[i];
+			*index = i;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int hash_iter_begin(hash_iter_t *iter)
+{
+	return _hash_search_begin(iter->ht, &iter->entry, &iter->index);
 }
 
 int hash_iter_next(hash_iter_t *iter)
@@ -254,23 +280,10 @@ int hash_iter_next(hash_iter_t *iter)
 	if (!iter->entry)
 		return -1;
 
-	if (iter->entry->next) {
-		iter->entry = iter->entry->next;
-		return 1;
-	}
-
-	for (size_t i = iter->index + 1; i < iter->ht->arr_s; i++) {
-		if (iter->ht->arr[i]) {
-			iter->entry = iter->ht->arr[i];
-			iter->index = i;
-			return 1;
-		}
-	}
-
-	return 0;
+	return _hash_search_next(iter->ht, &iter->entry, &iter->index);
 }
 
-int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s, 
+int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 		   size_t **data_r)
 {
 	if (!iter->entry)
@@ -284,3 +297,21 @@ int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 		*data_r = &iter->entry->data;
 	return 0;
 }
+
+int hash_foreach_data(hash_table_t *ht, hash_foreach_func_t *func, void *arg)
+{
+	struct hash_entry *ptr = NULL;
+	size_t index = 0;
+
+	int ret = _hash_search_begin(ht, &ptr, &index);
+
+	while (ret) {
+		ret = func(ptr->key, ptr->key_s, &ptr->data, arg);
+		if (ret)
+			return ret;
+		ret = _hash_search_next(ht, &ptr, &index);
+	}
+
+	return 0;
+}
+
