@@ -2,7 +2,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* #define FAULT_INJECT_LOG_ON */
+
+#ifdef FAULT_INJECT_LOG_ON
+#define FAULT_LOG(arg) arg
+#else
 #define FAULT_LOG(arg)
+#endif
 
 void *__real_malloc(size_t size);
 void *__real_calloc(size_t nmemb, size_t size);

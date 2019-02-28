@@ -27,6 +27,7 @@ int hash_ctors_test()
 #define STRESS_WORD_N 64
 #define STRESS_CYCLES 1024
 #define STRESS_HASH_S 1024
+#define STRESS_DISTRIB_LOG "./hash_stress_distrib.log"
 
 struct stress_word {
 	size_t cur_s;
@@ -114,7 +115,11 @@ int hash_rand_stress_test()
 		}
 	}
 
-	/* hash_table_dump_distrib(ht); */
+	FILE *out_log = fopen(STRESS_DISTRIB_LOG, "w");
+	assert(out_log);
+	hash_table_dump_distrib(ht, out_log);
+	fclose(out_log);
+
 	hash_table_delete(ht);
 	return 0;
 }

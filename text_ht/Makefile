@@ -5,6 +5,8 @@ LDFLAGS_FAULT_INJECTOR := -Wl,-wrap,malloc,-wrap,calloc
 BUILD_DIR := build
 -include *.d
 
+.DEFAULT_GOAL := run_tests
+
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
@@ -12,8 +14,9 @@ $(BUILD_DIR)/%.o: %.c
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -rf *.o *.d *.gcov
+	rm -rf *.o *.d *.gcov *.log
 
+# Simple utest
 HASH_UTEST_SRC := hash_table_utest.c hash_table.c
 HASH_UTEST_OBJ := $(addprefix $(BUILD_DIR)/,$(HASH_UTEST_SRC:.c=.o))
 .PHONY: build_utest
@@ -21,6 +24,7 @@ build_utest: $(BUILD_DIR)/hash_utest
 $(BUILD_DIR)/hash_utest: $(HASH_UTEST_OBJ)
 	$(CC) $(LDFLAGS) $(HASH_UTEST_OBJ) -o $@
 
+# Stress test with many allocations and wrapped malloc
 FAULT_TEST_SRC := hash_fault_test.c hash_table.c fault_injector.c
 FAULT_TEST_OBJ := $(addprefix $(BUILD_DIR)/,$(FAULT_TEST_SRC:.c=.o))
 .PHONY: build_fault_test

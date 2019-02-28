@@ -1,6 +1,8 @@
 #ifndef HASH_TABLE_H_
 #define HASH_TABLE_H_
+
 #include <stddef.h>
+#include <stdio.h>
 
 /* Main container */
 struct hash_table;
@@ -11,6 +13,11 @@ typedef struct hash_table hash_table_t;
 struct hash_iter;
 typedef struct hash_iter hash_iter_t;
 
+/* Foreach function prototype */
+typedef int (hash_foreach_func_t)
+	    (const char *key, size_t key_s, size_t *data, void *arg);
+
+
 /* Allocate new hash table
  * Use n_buckets=0 to set size by default */
 hash_table_t *hash_table_new(size_t n_buckets);
@@ -19,17 +26,20 @@ hash_table_t *hash_table_new(size_t n_buckets);
 void hash_table_delete(hash_table_t *ht);
 void hash_table_clean(hash_table_t *ht);
 
-void hash_table_dump_distrib(hash_table_t *ht);
+/* Simple entries by buckets distribution dump */
+void hash_table_dump_distrib(hash_table_t *ht, FILE *stream);
+
 
 /* Insert, search, delete: possible return values:
- * 0: key not exist (earlier if it's insert or delete)
- * 1: key exists    (earlier if it's insert or delete)
+ * 0: key not exist
+ * 1: key exists
  *-1: failure, may only occur in insert */
 int hash_insert_data(hash_table_t *ht, char *key, size_t key_s,
 		     size_t **data_r);
 int hash_search_data(hash_table_t *ht, char *key, size_t key_s, 
 		     size_t **data_r);
 int hash_delete_data(hash_table_t *ht, char *key, size_t key_s);
+
 
 /* Allocate new iterator, this method doesn't initialize it */
 hash_iter_t *hash_iter_new(hash_table_t *ht);
@@ -52,9 +62,6 @@ int hash_iter_next(hash_iter_t *iter);
 int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 		   size_t **data_r);
 
-/* Foreach function prototype */
-typedef int (hash_foreach_func_t)
-	    (const char *key, size_t key_s, size_t *data, void *arg);
 
 /* Execute func for each entry in hash table
  * If func ret != 0 return ret */

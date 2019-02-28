@@ -32,7 +32,6 @@ int hash_simple_test()
 	ret = hash_delete_data(ht, word, sizeof(word));
 	assert(ret == 0);
 
-	hash_table_dump_distrib(ht);
 	hash_table_delete(ht);
 
 	return 0;

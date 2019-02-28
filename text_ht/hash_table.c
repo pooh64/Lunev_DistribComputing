@@ -5,8 +5,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-#define TRACE_LINE fprintf(stderr, "trace_line: %d\n", __LINE__);
-
 struct hash_entry {
 	char  *key;
 	size_t key_s;
@@ -23,8 +21,9 @@ struct hash_table {
 struct hash_iter {
 	struct hash_table *ht;
 	struct hash_entry *entry;
-	size_t index;
+	size_t index; /* Current bucket */
 };
+
 
 static struct hash_entry *_hash_entry_new(char *key, size_t key_s, size_t data)
 {
@@ -200,11 +199,11 @@ int hash_search_data(hash_table_t *ht, char *key, size_t key_s, size_t **data_r)
 	return 0;
 }
 
-void hash_table_dump_distrib(hash_table_t *ht)
+void hash_table_dump_distrib(hash_table_t *ht, FILE *stream)
 {
-	fprintf(stderr, "---hash_table_dump_distrib:---\n");
-	fprintf(stderr, "n_buckets=%lu\n", ht->arr_s);
-	fprintf(stderr, "n_entries=%lu\n", ht->n_entries);
+	fprintf(stream, "---hash_table_dump_distrib:---\n");
+	fprintf(stream, "n_buckets=%lu\n", ht->arr_s);
+	fprintf(stream, "n_entries=%lu\n", ht->n_entries);
 
 	for (size_t i = 0; i < ht->arr_s; i++) {
 		size_t len = 0;
@@ -213,10 +212,10 @@ void hash_table_dump_distrib(hash_table_t *ht)
 			ptr = ptr->next;
 			len++;
 		}
-		fprintf(stderr, "bucket[%lu]  %lu\n", i, len);
+		fprintf(stream, "bucket[%lu]  %lu\n", i, len);
 	}
 
-	fprintf(stderr, "---hash_table_dump_distrib/---\n");
+	fprintf(stream, "---hash_table_dump_distrib/---\n");
 }
 
 
