@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdint.h>
+#include <float.h>
 #include <pthread.h>
+#include <math.h>
 
 /* Turbo boost:
  * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
@@ -12,7 +14,7 @@
 
 struct task_container {
 	double base;
-	double step;
+	double step_wdth;
 	double accm;
 	size_t cur_step;
 	size_t n_steps;
@@ -26,6 +28,7 @@ struct task_container_align {
 static inline double func_to_integrate(double x)
 {
 	return 2 / (1 + x * x);
+	/* return 1; */
 }
 
 void *task_worker(void *arg)
@@ -34,20 +37,27 @@ void *task_worker(void *arg)
 	size_t cur_step = pack->cur_step;
 	double sum = 0;
 	double base = pack->base;
-	double step = pack->step;
+	double step_wdth = pack->step_wdth;
+
+	/* size_t cur_step_beg = cur_step; */
 
 	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
-		sum += func_to_integrate(base + cur_step * step) * step;
+		sum += func_to_integrate(base + cur_step * step_wdth) * step_wdth;
 	}
 
 	pack->accm = sum;
+
+/*
+	printf("task_worker: from %lg to %lg sum: %lg\n", 
+			base + ((double) cur_step_beg) * step_wdth,
+			base + ((double) cur_step_beg + pack->n_steps) * step_wdth,
+			sum);
+*/
 	return NULL;
 }
 
 
-/* Handle memleaks!!!
- * Correct n_threads == 1 behaviour!!
-*/
+/* Handle memleaks!!! */
 
 int integrate(int n_threads, double from, double to, double step, double *result)
 {
@@ -58,7 +68,7 @@ int integrate(int n_threads, double from, double to, double step, double *result
 	if (!tasks)
 		return -1;
 
-	pthread_t *threads;
+	pthread_t *threads = NULL;
 	if (n_threads != 1) {
 		threads = malloc(sizeof(*threads) * (n_threads - 1));
 		if (!threads)
@@ -67,11 +77,13 @@ int integrate(int n_threads, double from, double to, double step, double *result
 
 	size_t n_steps = (to - from) / step;
 	size_t cur_step = 0;
+	struct task_container *ptr;
 
+	/* Prepare tasks */
 	for (int i = 0; i < n_threads; i++) {
-		struct task_container *ptr = (struct task_container*) (tasks + i);
+		ptr = (struct task_container*) (tasks + i);
 		ptr->base = from;
-		ptr->step = step;
+		ptr->step_wdth = step;
 
 		size_t this_steps = n_steps / (n_threads - i);
 		ptr->cur_step = cur_step;
@@ -80,19 +92,20 @@ int integrate(int n_threads, double from, double to, double step, double *result
 		n_steps -= this_steps;
 	}
 
-	double accm;
-
-	for (int i = 0; i < n_threads; i++) {
-		struct task_container *ptr = (struct task_container*) (tasks + i);
+	/* Load n - 1 threads */
+	for (int i = 0; i < n_threads - 1; i++) {
+		ptr = (struct task_container*) (tasks + i);
 		int ret = pthread_create(threads + i, NULL, task_worker, ptr);
 		if (ret)
 			return -1;
-		if (i == n_threads - 1) {
-			task_worker(ptr);
-			accm = ptr->accm;
-		}
 	}
 
+	/* Load main thread */
+	ptr = (struct task_container*) (tasks + n_threads - 1);
+	task_worker(ptr);
+	double accm = ptr->accm;
+
+	/* Accumulate */
 	for (int i = 0; i < n_threads - 1; i++) {
 		struct task_container *ptr = (struct task_container*) (tasks + i);
 		int ret = pthread_join(*(threads + i), NULL);
@@ -103,8 +116,9 @@ int integrate(int n_threads, double from, double to, double step, double *result
 
 	*result = accm;
 
+	if (threads)
+		free(threads);
 	free(tasks);
-	free(threads);
 	return 0;
 }
 
@@ -116,10 +130,12 @@ int main(int argc, char *argv[])
 	int n_threads = atoi(argv[1]);
 
 	double from = 0;
-	double to = 10000;
+	double to = 100000;
 	double step = 0.0001;
 	double result;
 	integrate(n_threads, from, to, step, &result);
-	printf("result: %lg\n", result);
+	printf("result: %.*lg\n", DBL_DIG, result);
+	printf("origin: %.*lg\n", DBL_DIG, M_PI);
+
 	return 0;
 }
