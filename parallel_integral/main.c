@@ -15,7 +15,18 @@
 #include <string.h>
 #include <sched.h>
 
-/* Turbo boost:
+/* #define DUMP_LOG_ENABLED */
+#ifdef DUMP_LOG_ENABLED
+#define DUMP_LOG(arg) arg
+#else
+#define DUMP_LOG(arg)
+#endif
+
+/* Todo:
+ * Memleaks in falure situations, other errors
+ * Run with valgrind
+ *
+ * Turbo boost:
  * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
  * /sys/devices/system/cpu/cpufreq/boost */
 
@@ -123,11 +134,17 @@ void *task_worker(void *arg)
 	double base = pack->base;
 	double step_wdth = pack->step_wdth;
 
+	DUMP_LOG(double dump_from = base + cur_step * step_wdth);
+	DUMP_LOG(double dump_to   = base + (cur_step + pack->n_steps) * step_wdth);
+
 	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
 		sum += func_to_integrate(base + cur_step * step_wdth) * step_wdth;
 	}
 
 	pack->accum = sum;
+
+	DUMP_LOG(fprintf(stderr, "worker: from: %9.9lg to: %9.9lg sum: %9.9lg\n",
+		dump_from, dump_to, sum));
 
 	return NULL;
 }
@@ -250,7 +267,7 @@ int main(int argc, char *argv[])
 	}
 
 	double from = 0;
-	double to = 10000;
+	double to = 20000;
 	double step = 0.0001;
 	double result;
 	if (integrate(n_threads, &cpuset, from, to, step, &result) == -1) {
