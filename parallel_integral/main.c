@@ -4,11 +4,93 @@
 #include <stdint.h>
 #include <float.h>
 #include <pthread.h>
+#include <dirent.h>
 #include <math.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <sched.h>
 
 /* Turbo boost:
  * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
- * /sys/devices/system/cpu/cpufreq/boost (0/1) */
+ * /sys/devices/system/cpu/cpufreq/boost */
+
+/* Set one cpu per core in cpuset, returns number of cores */
+int set_single_cpus(cpu_set_t *cpuset)
+{
+	DIR *sysfs_cpudir = opendir("/sys/bus/cpu/devices");
+	if (!sysfs_cpudir)
+		return -1;
+
+	/* assoc_cpu_id = assoc_cpus[core_id] */
+	int *assoc_cpus = malloc(sizeof(int) * CPU_SETSIZE);
+	if (!assoc_cpus) {
+		closedir(sysfs_cpudir);
+		return -1;
+	}
+	int *ptr = assoc_cpus;
+	for (size_t i = CPU_SETSIZE; i != 0; i--, ptr++)
+		*ptr = -1;
+
+	errno = 0;
+	int n_cores = 0;
+	struct dirent *entry;
+	char buf[512];
+
+	/* Find one cpu per one core */
+	while ((entry = readdir(sysfs_cpudir)) != NULL) {
+		if (!memcmp(entry->d_name, "cpu", 3)) {
+			int cpu_id = atoi(entry->d_name + 3);
+			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/core_id\0", entry->d_name);
+			int fd = open(buf, O_RDONLY);
+			if (fd == -1)
+				goto handle_err;
+			ssize_t ret = read(fd, buf, sizeof(buf) - 1);
+			if (close(fd) == -1)
+				goto handle_err;
+			if (ret == -1)
+				goto handle_err;
+			buf[ret] = '\0';
+			int core_id = atoi(buf);
+			/* printf("cpu: %d core: %d\n", cpu_id, core_id); */
+			assoc_cpus[core_id] = cpu_id;
+			n_cores++;
+		}
+	}
+
+	if (errno)
+		goto handle_err;
+
+	/* Translate it to cpu_set */
+	CPU_ZERO(cpuset);
+	int id = 0;
+	for (int n = n_cores; n != 0; id++) {
+		if (assoc_cpus[id] != -1) {
+			CPU_SET(assoc_cpus[id], cpuset);
+			n--;
+		}
+	}
+
+	closedir(sysfs_cpudir);
+	return n_cores;
+
+handle_err:
+	free(assoc_cpus);
+	closedir(sysfs_cpudir);
+	return -1;
+}
+
+int cpu_set_search_next(int cpu, cpu_set_t *set)
+{
+	for (int i = cpu; i < CPU_SETSIZE; i++) {
+		if (CPU_ISSET(cpu, set))
+			return i;
+	}
+	return 0;
+}
 
 #define CACHE_CELL_ALIGN 128
 
@@ -18,6 +100,7 @@ struct task_container {
 	double accm;
 	size_t cur_step;
 	size_t n_steps;
+	int cpu;
 };
 
 struct task_container_align {
@@ -56,13 +139,12 @@ void *task_worker(void *arg)
 	return NULL;
 }
 
-
 /* Handle memleaks!!! */
 
-int integrate(int n_threads, double from, double to, double step, double *result)
+int integrate(int n_threads, cpu_set_t *cpuset, 
+	      double from, double to, double step, double *result)
 {
-	assert(sizeof(struct task_container) <= CACHE_CELL_ALIGN);
-
+	/* Allocate cache-aligned task containers */
 	struct task_container_align *tasks = 
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
 	if (!tasks)
@@ -75,11 +157,18 @@ int integrate(int n_threads, double from, double to, double step, double *result
 			return -1;
 	}
 
-	size_t n_steps = (to - from) / step;
-	size_t cur_step = 0;
 	struct task_container *ptr;
 
 	/* Prepare tasks */
+	int n_cpus = CPU_COUNT(cpuset);
+	if (n_threads < n_cpus)
+		n_cpus = n_threads;
+
+
+
+	size_t n_steps = (to - from) / step;
+	size_t cur_step = 0;
+
 	for (int i = 0; i < n_threads; i++) {
 		ptr = (struct task_container*) (tasks + i);
 		ptr->base = from;
@@ -105,9 +194,9 @@ int integrate(int n_threads, double from, double to, double step, double *result
 	task_worker(ptr);
 	double accm = ptr->accm;
 
-	/* Accumulate */
+	/* Accumulate result */
 	for (int i = 0; i < n_threads - 1; i++) {
-		struct task_container *ptr = (struct task_container*) (tasks + i);
+		task_container *ptr = (struct task_container*) (tasks + i);
 		int ret = pthread_join(*(threads + i), NULL);
 		if (ret)
 			return -1;
@@ -124,18 +213,30 @@ int integrate(int n_threads, double from, double to, double step, double *result
 
 int main(int argc, char *argv[])
 {
-	if (argc != 2)
-		return EXIT_FAILURE;
+	if (argc != 2) {
+		fprintf(stderr, "Error: wrong argv\n");
+		exit(EXIT_FAILURE);
+	}
 
 	int n_threads = atoi(argv[1]);
 
+	cpu_set_t cpuset;
+	int n_cores = set_single_cpus(&cpuset);
+	if (n_cores == -1) {
+		perror("Error: set_single_cores");
+		exit(EXIT_FAILURE);
+	}
+
 	double from = 0;
-	double to = 100000;
+	double to = 10000;
 	double step = 0.0001;
 	double result;
-	integrate(n_threads, from, to, step, &result);
+	if (integrate(n_threads, &cpuset, from, to, step, &result) == -1) {
+		perror("Error: integrate");
+		exit(EXIT_FAILURE);
+	}
+
 	printf("result: %.*lg\n", DBL_DIG, result);
-	printf("origin: %.*lg\n", DBL_DIG, M_PI);
 
 	return 0;
 }
