@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -85,7 +86,7 @@ handle_err:
 
 int cpu_set_search_next(int cpu, cpu_set_t *set)
 {
-	for (int i = cpu; i < CPU_SETSIZE; i++) {
+	for (int i = cpu + 1; i < CPU_SETSIZE; i++) {
 		if (CPU_ISSET(cpu, set))
 			return i;
 	}
@@ -97,8 +98,8 @@ int cpu_set_search_next(int cpu, cpu_set_t *set)
 struct task_container {
 	double base;
 	double step_wdth;
-	double accm;
-	size_t cur_step;
+	double accum;
+	size_t start_step;
 	size_t n_steps;
 	int cpu;
 };
@@ -117,26 +118,41 @@ static inline double func_to_integrate(double x)
 void *task_worker(void *arg)
 {
 	struct task_container *pack = arg;
-	size_t cur_step = pack->cur_step;
+	size_t cur_step = pack->start_step;
 	double sum = 0;
 	double base = pack->base;
 	double step_wdth = pack->step_wdth;
-
-	/* size_t cur_step_beg = cur_step; */
 
 	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
 		sum += func_to_integrate(base + cur_step * step_wdth) * step_wdth;
 	}
 
-	pack->accm = sum;
+	pack->accum = sum;
 
-/*
-	printf("task_worker: from %lg to %lg sum: %lg\n", 
-			base + ((double) cur_step_beg) * step_wdth,
-			base + ((double) cur_step_beg + pack->n_steps) * step_wdth,
-			sum);
-*/
 	return NULL;
+}
+
+void integrate_split_task(int n_threads, cpu_set_t *cpuset, double from, 
+	double to, double step, struct task_container_align *tasks)
+{
+	int n_cpus = CPU_COUNT(cpuset);
+	if (n_threads < n_cpus)
+		n_cpus = n_threads;
+
+	size_t n_steps = (to - from) / step;
+	size_t cur_step = 0;
+
+	for (int thr = 0; thr < n_threads; thr++) {
+		struct task_container *ptr = (struct task_container*) (tasks + thr);
+		ptr->base = from;
+		ptr->step_wdth = step;
+
+		size_t thr_steps = n_steps / (n_threads - thr);
+		ptr->start_step = cur_step;
+		ptr->n_steps = thr_steps;
+		cur_step += thr_steps;
+		n_steps -= thr_steps;
+	}
 }
 
 /* Handle memleaks!!! */
@@ -157,53 +173,32 @@ int integrate(int n_threads, cpu_set_t *cpuset,
 			return -1;
 	}
 
-	struct task_container *ptr;
-
-	/* Prepare tasks */
-	int n_cpus = CPU_COUNT(cpuset);
-	if (n_threads < n_cpus)
-		n_cpus = n_threads;
-
-
-
-	size_t n_steps = (to - from) / step;
-	size_t cur_step = 0;
-
-	for (int i = 0; i < n_threads; i++) {
-		ptr = (struct task_container*) (tasks + i);
-		ptr->base = from;
-		ptr->step_wdth = step;
-
-		size_t this_steps = n_steps / (n_threads - i);
-		ptr->cur_step = cur_step;
-		ptr->n_steps = this_steps;
-		cur_step += this_steps;
-		n_steps -= this_steps;
-	}
+	/* Split task btw cpus and threads */
+	integrate_split_task(n_threads, cpuset, from, to, step, tasks);
 
 	/* Load n - 1 threads */
 	for (int i = 0; i < n_threads - 1; i++) {
-		ptr = (struct task_container*) (tasks + i);
+		struct task_container *ptr = (struct task_container*) (tasks + i);
 		int ret = pthread_create(threads + i, NULL, task_worker, ptr);
 		if (ret)
 			return -1;
 	}
 
 	/* Load main thread */
-	ptr = (struct task_container*) (tasks + n_threads - 1);
-	task_worker(ptr);
-	double accm = ptr->accm;
+	struct task_container *main_task = (struct task_container*) (tasks + n_threads - 1);
+	task_worker(main_task);
+	double accum = main_task->accum;
 
 	/* Accumulate result */
 	for (int i = 0; i < n_threads - 1; i++) {
-		task_container *ptr = (struct task_container*) (tasks + i);
+		struct task_container *ptr = (struct task_container*) (tasks + i);
 		int ret = pthread_join(*(threads + i), NULL);
 		if (ret)
 			return -1;
-		accm += ptr->accm;
+		accum += ptr->accum;
 	}
 
-	*result = accm;
+	*result = accum;
 
 	if (threads)
 		free(threads);
