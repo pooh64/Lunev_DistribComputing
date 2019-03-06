@@ -141,17 +141,31 @@ void integrate_split_task(int n_threads, cpu_set_t *cpuset, double from,
 
 	size_t n_steps = (to - from) / step;
 	size_t cur_step = 0;
+	int    cur_thread  = 0;
 
-	for (int thr = 0; thr < n_threads; thr++) {
-		struct task_container *ptr = (struct task_container*) (tasks + thr);
-		ptr->base = from;
-		ptr->step_wdth = step;
+	int cpu = cpu_set_search_next(-1, cpuset);
+	for (; n_cpus != 0; n_cpus--, cpu = cpu_set_search_next(cpu, cpuset)) {
 
-		size_t thr_steps = n_steps / (n_threads - thr);
-		ptr->start_step = cur_step;
-		ptr->n_steps = thr_steps;
-		cur_step += thr_steps;
-		n_steps -= thr_steps;
+		/* Take ~1/n steps and threads per one cpu */
+		size_t cpu_steps   = n_steps   / n_cpus;
+		int    cpu_threads = n_threads / n_cpus;
+		       n_steps    -= cpu_steps;
+		       n_threads  -= cpu_threads;
+
+		for (; cpu_threads != 0; cpu_threads--, cur_thread++) {
+			struct task_container *ptr = (struct task_container*) (tasks + cur_thread);
+			ptr->base = from;
+			ptr->step_wdth = step;
+			ptr->cpu = cpu;
+
+			size_t thr_steps = cpu_steps / cpu_threads;
+
+			ptr->start_step = cur_step;
+			ptr->n_steps    = thr_steps;
+
+			cur_step  += thr_steps;
+			cpu_steps -= thr_steps;
+		}
 	}
 }
 
@@ -176,16 +190,29 @@ int integrate(int n_threads, cpu_set_t *cpuset,
 	/* Split task btw cpus and threads */
 	integrate_split_task(n_threads, cpuset, from, to, step, tasks);
 
+	/* Move main thread to other cpu before load start */
+	struct task_container *main_task = (struct task_container*) (tasks + n_threads - 1);
+	cpu_set_t cpuset_tmp;
+	CPU_ZERO(&cpuset_tmp);
+	CPU_SET(main_task->cpu, &cpuset_tmp);
+	if (sched_setaffinity(getpid(), sizeof(cpuset_tmp), &cpuset_tmp) == -1)
+		return -1;
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+
 	/* Load n - 1 threads */
 	for (int i = 0; i < n_threads - 1; i++) {
 		struct task_container *ptr = (struct task_container*) (tasks + i);
-		int ret = pthread_create(threads + i, NULL, task_worker, ptr);
+		CPU_ZERO(&cpuset_tmp);
+		CPU_SET(ptr->cpu, &cpuset_tmp);
+		pthread_attr_setaffinity_np(&attr, sizeof(cpuset_tmp), &cpuset_tmp);
+		int ret = pthread_create(threads + i, &attr, task_worker, ptr);
 		if (ret)
 			return -1;
 	}
 
 	/* Load main thread */
-	struct task_container *main_task = (struct task_container*) (tasks + n_threads - 1);
 	task_worker(main_task);
 	double accum = main_task->accum;
 
