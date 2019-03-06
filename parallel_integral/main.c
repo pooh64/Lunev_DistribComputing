@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sched.h>
+#include <limits.h>
 
 /* #define DUMP_LOG_ENABLED */
 #ifdef DUMP_LOG_ENABLED
@@ -23,8 +24,6 @@
 #endif
 
 /* Todo:
- * Memleaks in falure situations, other errors
- * Run with valgrind
  *
  * Turbo boost:
  * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
@@ -47,36 +46,41 @@ int set_single_cpus(cpu_set_t *cpuset)
 	for (size_t i = CPU_SETSIZE; i != 0; i--, ptr++)
 		*ptr = -1;
 
-	errno = 0;
 	int n_cores = 0;
 	struct dirent *entry;
 	char buf[512];
+	errno = 0;
 
 	/* Find one cpu per one core */
 	while ((entry = readdir(sysfs_cpudir)) != NULL) {
 		if (!memcmp(entry->d_name, "cpu", 3)) {
 			int cpu_id = atoi(entry->d_name + 3);
-			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/core_id\0", entry->d_name);
+			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/core_id",
+				entry->d_name);
+
 			int fd = open(buf, O_RDONLY);
 			if (fd == -1)
 				goto handle_err;
 			ssize_t ret = read(fd, buf, sizeof(buf) - 1);
-			if (close(fd) == -1)
-				goto handle_err;
 			if (ret == -1)
 				goto handle_err;
+			if (close(fd) == -1)
+				goto handle_err;
+
 			buf[ret] = '\0';
 			int core_id = atoi(buf);
-			/* printf("cpu: %d core: %d\n", cpu_id, core_id); */
+			DUMP_LOG(fprintf(stderr, "cpu: %d core: %d\n",
+					 cpu_id, core_id));
+			if (assoc_cpus[core_id] != -1)
+				n_cores++;
 			assoc_cpus[core_id] = cpu_id;
-			n_cores++;
 		}
 	}
 
 	if (errno)
 		goto handle_err;
 
-	/* Translate it to cpu_set */
+	/* Set single-core cpus in cpuset */
 	CPU_ZERO(cpuset);
 	int id = 0;
 	for (int n = n_cores; n != 0; id++) {
@@ -86,6 +90,7 @@ int set_single_cpus(cpu_set_t *cpuset)
 		}
 	}
 
+	free(assoc_cpus);
 	closedir(sysfs_cpudir);
 	return n_cores;
 
@@ -104,20 +109,22 @@ int cpu_set_search_next(int cpu, cpu_set_t *set)
 	return 0;
 }
 
-#define CACHE_CELL_ALIGN 128
 
 struct task_container {
 	double base;
 	double step_wdth;
 	double accum;
+
 	size_t start_step;
 	size_t n_steps;
 	int cpu;
 };
 
+#define CACHE_CELL_ALIGN 128
 struct task_container_align {
 	struct task_container task;
-	uint8_t padding[128 - sizeof(struct task_container)];
+	uint8_t padding[CACHE_CELL_ALIGN -
+		sizeof(struct task_container)];
 };
 
 static inline double func_to_integrate(double x)
@@ -135,28 +142,30 @@ void *task_worker(void *arg)
 	double step_wdth = pack->step_wdth;
 
 	DUMP_LOG(double dump_from = base + cur_step * step_wdth);
-	DUMP_LOG(double dump_to   = base + (cur_step + pack->n_steps) * step_wdth);
+	DUMP_LOG(double dump_to   = base + (cur_step + pack->n_steps) * 
+		 		    step_wdth);
 
 	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
-		sum += func_to_integrate(base + cur_step * step_wdth) * step_wdth;
+		sum += func_to_integrate(base + cur_step * step_wdth) * 
+		       step_wdth;
 	}
 
 	pack->accum = sum;
 
-	DUMP_LOG(fprintf(stderr, "worker: from: %9.9lg to: %9.9lg sum: %9.9lg\n",
-		dump_from, dump_to, sum));
+	DUMP_LOG(fprintf(stderr, "worker: from: %9.9lg "
+				 "to: %9.9lg sum: %9.9lg\n",
+			 dump_from, dump_to, sum));
 
 	return NULL;
 }
 
-void integrate_split_task(int n_threads, cpu_set_t *cpuset, double from, 
-	double to, double step, struct task_container_align *tasks)
+void integrate_split_task(struct task_container_align *tasks, int n_threads,
+	cpu_set_t *cpuset, size_t n_steps, double base, double step)
 {
 	int n_cpus = CPU_COUNT(cpuset);
 	if (n_threads < n_cpus)
 		n_cpus = n_threads;
 
-	size_t n_steps = (to - from) / step;
 	size_t cur_step = 0;
 	int    cur_thread  = 0;
 
@@ -170,8 +179,9 @@ void integrate_split_task(int n_threads, cpu_set_t *cpuset, double from,
 		       n_threads  -= cpu_threads;
 
 		for (; cpu_threads != 0; cpu_threads--, cur_thread++) {
-			struct task_container *ptr = (struct task_container*) (tasks + cur_thread);
-			ptr->base = from;
+			struct task_container *ptr =
+				(struct task_container*) (tasks + cur_thread);
+			ptr->base = base;
 			ptr->step_wdth = step;
 			ptr->cpu = cpu;
 
@@ -186,10 +196,8 @@ void integrate_split_task(int n_threads, cpu_set_t *cpuset, double from,
 	}
 }
 
-/* Handle memleaks!!! */
-
-int integrate(int n_threads, cpu_set_t *cpuset, 
-	      double from, double to, double step, double *result)
+int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+	      double base, double step, double *result)
 {
 	/* Allocate cache-aligned task containers */
 	struct task_container_align *tasks = 
@@ -200,33 +208,37 @@ int integrate(int n_threads, cpu_set_t *cpuset,
 	pthread_t *threads = NULL;
 	if (n_threads != 1) {
 		threads = malloc(sizeof(*threads) * (n_threads - 1));
-		if (!threads)
+		if (!threads) {
+			free(tasks);
 			return -1;
+		}
 	}
 
 	/* Split task btw cpus and threads */
-	integrate_split_task(n_threads, cpuset, from, to, step, tasks);
+	integrate_split_task(tasks, n_threads, cpuset, n_steps, base, step);
 
 	/* Move main thread to other cpu before load start */
-	struct task_container *main_task = (struct task_container*) (tasks + n_threads - 1);
+	struct task_container *main_task = 
+		(struct task_container*) (tasks + n_threads - 1);
 	cpu_set_t cpuset_tmp;
 	CPU_ZERO(&cpuset_tmp);
 	CPU_SET(main_task->cpu, &cpuset_tmp);
 	if (sched_setaffinity(getpid(), sizeof(cpuset_tmp), &cpuset_tmp) == -1)
-		return -1;
-
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
+		goto handle_err;
 
 	/* Load n - 1 threads */
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
 	for (int i = 0; i < n_threads - 1; i++) {
-		struct task_container *ptr = (struct task_container*) (tasks + i);
+		struct task_container *ptr = 
+			(struct task_container*) (tasks + i);
 		CPU_ZERO(&cpuset_tmp);
 		CPU_SET(ptr->cpu, &cpuset_tmp);
-		pthread_attr_setaffinity_np(&attr, sizeof(cpuset_tmp), &cpuset_tmp);
+		pthread_attr_setaffinity_np(&attr,
+					    sizeof(cpuset_tmp), &cpuset_tmp);
 		int ret = pthread_create(threads + i, &attr, task_worker, ptr);
 		if (ret)
-			return -1;
+			goto handle_err;
 	}
 
 	/* Load main thread */
@@ -235,10 +247,11 @@ int integrate(int n_threads, cpu_set_t *cpuset,
 
 	/* Accumulate result */
 	for (int i = 0; i < n_threads - 1; i++) {
-		struct task_container *ptr = (struct task_container*) (tasks + i);
+		struct task_container *ptr =
+			(struct task_container*) (tasks + i);
 		int ret = pthread_join(*(threads + i), NULL);
 		if (ret)
-			return -1;
+			goto handle_err;
 		accum += ptr->accum;
 	}
 
@@ -248,6 +261,12 @@ int integrate(int n_threads, cpu_set_t *cpuset,
 		free(threads);
 	free(tasks);
 	return 0;
+
+handle_err:
+	if (threads)
+		free(threads);
+	free(tasks);
+	return -1;
 }
 
 int main(int argc, char *argv[])
@@ -257,7 +276,14 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	int n_threads = atoi(argv[1]);
+	char *endptr;
+	errno = 0;
+	long tmp = strtol(argv[1], &endptr, 10);
+	if (errno || *endptr != '\0' || tmp < 1 || tmp > INT_MAX) {
+		fprintf(stderr, "Error: wrong number of threads\n");
+		exit(EXIT_FAILURE);
+	}
+	int n_threads = tmp;
 
 	cpu_set_t cpuset;
 	int n_cores = set_single_cpus(&cpuset);
@@ -268,9 +294,10 @@ int main(int argc, char *argv[])
 
 	double from = 0;
 	double to = 20000;
-	double step = 0.0001;
+	double step = 0.00005;
 	double result;
-	if (integrate(n_threads, &cpuset, from, to, step, &result) == -1) {
+	size_t n_steps = (to - from) / step;
+	if (integrate(n_threads, &cpuset, n_steps, from, step, &result) == -1) {
 		perror("Error: integrate");
 		exit(EXIT_FAILURE);
 	}
