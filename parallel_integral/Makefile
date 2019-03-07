@@ -1,4 +1,4 @@
-CFLAGS := -c -g -O0 -Wall
+CFLAGS := -c -g -O2 -Wall
 LDFLAGS := -lpthread
 
 BUILD_DIR := build

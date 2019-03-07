@@ -23,6 +23,8 @@
 #define DUMP_LOG(arg)
 #endif
 
+#define TRACE_LINE fprintf(stderr, "line: %d\n", __LINE__)
+
 /* Todo:
  *
  * Turbo boost:
@@ -33,12 +35,15 @@
 int set_single_cpus(cpu_set_t *cpuset)
 {
 	DIR *sysfs_cpudir = opendir("/sys/bus/cpu/devices");
-	if (!sysfs_cpudir)
+	if (!sysfs_cpudir) {
+		perror("Error: opendir /sys/bus/cpu/devices");
 		return -1;
+	}
 
 	/* assoc_cpu_id = assoc_cpus[core_id] */
 	int *assoc_cpus = malloc(sizeof(int) * CPU_SETSIZE);
 	if (!assoc_cpus) {
+		perror("Error: malloc");
 		closedir(sysfs_cpudir);
 		return -1;
 	}
@@ -59,32 +64,42 @@ int set_single_cpus(cpu_set_t *cpuset)
 				entry->d_name);
 
 			int fd = open(buf, O_RDONLY);
-			if (fd == -1)
+			if (fd == -1) {
+				perror("Error: open sysfs cpu core_id file");
 				goto handle_err;
+			}
 			ssize_t ret = read(fd, buf, sizeof(buf) - 1);
-			if (ret == -1)
+			if (ret == -1) {
+				perror("Error: read sysfs cpu core_id file");
 				goto handle_err;
-			if (close(fd) == -1)
+			}
+			if (close(fd) == -1) {
+				perror("Error: close");
 				goto handle_err;
+			}
 
 			buf[ret] = '\0';
 			int core_id = atoi(buf);
 			DUMP_LOG(fprintf(stderr, "cpu: %d core: %d\n",
 					 cpu_id, core_id));
-			if (assoc_cpus[core_id] != -1)
+			if (assoc_cpus[core_id] == -1)
 				n_cores++;
 			assoc_cpus[core_id] = cpu_id;
 		}
 	}
 
-	if (errno)
+	if (errno) {
+		perror("Error: readdir");
 		goto handle_err;
+	}
 
 	/* Set single-core cpus in cpuset */
 	CPU_ZERO(cpuset);
 	int id = 0;
 	for (int n = n_cores; n != 0; id++) {
 		if (assoc_cpus[id] != -1) {
+			DUMP_LOG(fprintf(stderr, "CPU_SET cpu = %d\n",
+					 assoc_cpus[id]));
 			CPU_SET(assoc_cpus[id], cpuset);
 			n--;
 		}
@@ -202,13 +217,16 @@ int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	/* Allocate cache-aligned task containers */
 	struct task_container_align *tasks = 
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
-	if (!tasks)
+	if (!tasks) {
+		perror("Error: aligned_alloc");
 		return -1;
+	}
 
 	pthread_t *threads = NULL;
 	if (n_threads != 1) {
 		threads = malloc(sizeof(*threads) * (n_threads - 1));
 		if (!threads) {
+			perror("Error: malloc");
 			free(tasks);
 			return -1;
 		}
@@ -223,8 +241,13 @@ int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	cpu_set_t cpuset_tmp;
 	CPU_ZERO(&cpuset_tmp);
 	CPU_SET(main_task->cpu, &cpuset_tmp);
-	if (sched_setaffinity(getpid(), sizeof(cpuset_tmp), &cpuset_tmp) == -1)
+	DUMP_LOG(fprintf(stderr, "setting worker to cpu = %d\n",
+			 main_task->cpu));
+	if (sched_setaffinity(getpid(), 
+	    sizeof(cpuset_tmp), &cpuset_tmp) == -1) {
+		perror("Error: sched_setaffinity");
 		goto handle_err;
+	}
 
 	/* Load n - 1 threads */
 	pthread_attr_t attr;
@@ -234,11 +257,15 @@ int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 			(struct task_container*) (tasks + i);
 		CPU_ZERO(&cpuset_tmp);
 		CPU_SET(ptr->cpu, &cpuset_tmp);
+		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %d\n",
+				 ptr->cpu));
 		pthread_attr_setaffinity_np(&attr,
 					    sizeof(cpuset_tmp), &cpuset_tmp);
 		int ret = pthread_create(threads + i, &attr, task_worker, ptr);
-		if (ret)
+		if (ret) {
+			perror("Error: pthread_create");
 			goto handle_err;
+		}
 	}
 
 	/* Load main thread */
@@ -250,8 +277,10 @@ int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 		struct task_container *ptr =
 			(struct task_container*) (tasks + i);
 		int ret = pthread_join(*(threads + i), NULL);
-		if (ret)
+		if (ret) {
+			perror("Error: pthread_join");
 			goto handle_err;
+		}
 		accum += ptr->accum;
 	}
 
@@ -293,7 +322,7 @@ int main(int argc, char *argv[])
 	}
 
 	double from = 0;
-	double to = 20000;
+	double to = 500000;
 	double step = 0.00005;
 	double result;
 	size_t n_steps = (to - from) / step;
