@@ -1,3 +1,5 @@
+#include "cpu_topology.h"
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +18,7 @@
 #include <sched.h>
 #include <limits.h>
 
-/* #define DUMP_LOG_ENABLED */
+#define DUMP_LOG_ENABLED
 #ifdef DUMP_LOG_ENABLED
 #define DUMP_LOG(arg) arg
 #else
@@ -59,29 +61,29 @@ int set_single_cpus(cpu_set_t *cpuset)
 	/* Find one cpu per one core */
 	while ((entry = readdir(sysfs_cpudir)) != NULL) {
 		if (!memcmp(entry->d_name, "cpu", 3)) {
-			int cpu_id = atoi(entry->d_name + 3);
-			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/core_id",
-				entry->d_name);
+			int cpu_id, core_id, package_id;
 
-			int fd = open(buf, O_RDONLY);
-			if (fd == -1) {
-				perror("Error: open sysfs cpu core_id file");
-				goto handle_err;
-			}
-			ssize_t ret = read(fd, buf, sizeof(buf) - 1);
-			if (ret == -1) {
-				perror("Error: read sysfs cpu core_id file");
-				goto handle_err;
-			}
-			if (close(fd) == -1) {
-				perror("Error: close");
+			cpu_id = atoi(entry->d_name + 3);
+
+			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/"
+				"core_id", entry->d_name);
+			if (file_read_num(buf, &core_id)) {
+				fprintf(stderr, "Error: set_single_cpus: "
+					"core_id read failed\n");
 				goto handle_err;
 			}
 
-			buf[ret] = '\0';
-			int core_id = atoi(buf);
-			DUMP_LOG(fprintf(stderr, "cpu: %d core: %d\n",
-					 cpu_id, core_id));
+			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/"
+				"physical_package_id", entry->d_name);
+			if (file_read_num(buf, &package_id)) {
+				fprintf(stderr, "Error: set_single_cpus: "
+					"package_id read failed\n");
+				goto handle_err;
+			}
+			
+			DUMP_LOG(fprintf(stderr, "package: %2.2d "
+					"core: %2.2d cpu: %2.2d\n",
+					 package_id, core_id, cpu_id));
 			if (assoc_cpus[core_id] == -1)
 				n_cores++;
 			assoc_cpus[core_id] = cpu_id;
@@ -300,6 +302,12 @@ handle_err:
 
 int main(int argc, char *argv[])
 {
+	struct cpu_topology topo;
+	if (get_cpu_topology(&topo)) {
+		fprintf(stderr, "Error: get_cpu_topology failed\n");
+		exit(EXIT_FAILURE);
+	}
+
 	if (argc != 2) {
 		fprintf(stderr, "Error: wrong argv\n");
 		exit(EXIT_FAILURE);
