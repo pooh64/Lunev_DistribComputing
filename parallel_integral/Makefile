@@ -15,8 +15,9 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf *.o *.log
 
-INTEGRAL_SRC := main.c
+INTEGRAL_SRC := main.c cpu_topology.c
 INTEGRAL_OBJ := $(addprefix $(BUILD_DIR)/,$(INTEGRAL_SRC:.c=.o))
+
 .PHONY: integral
 integral: $(BUILD_DIR)/integral
 $(BUILD_DIR)/integral: $(INTEGRAL_OBJ)

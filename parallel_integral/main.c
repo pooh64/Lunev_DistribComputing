@@ -18,7 +18,7 @@
 #include <sched.h>
 #include <limits.h>
 
-#define DUMP_LOG_ENABLED
+/* #define DUMP_LOG_ENABLED */
 #ifdef DUMP_LOG_ENABLED
 #define DUMP_LOG(arg) arg
 #else
@@ -32,100 +32,6 @@
  * Turbo boost:
  * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
  * /sys/devices/system/cpu/cpufreq/boost */
-
-/* Set one cpu per core in cpuset, returns number of cores */
-int set_single_cpus(cpu_set_t *cpuset)
-{
-	DIR *sysfs_cpudir = opendir("/sys/bus/cpu/devices");
-	if (!sysfs_cpudir) {
-		perror("Error: opendir /sys/bus/cpu/devices");
-		return -1;
-	}
-
-	/* assoc_cpu_id = assoc_cpus[core_id] */
-	int *assoc_cpus = malloc(sizeof(int) * CPU_SETSIZE);
-	if (!assoc_cpus) {
-		perror("Error: malloc");
-		closedir(sysfs_cpudir);
-		return -1;
-	}
-	int *ptr = assoc_cpus;
-	for (size_t i = CPU_SETSIZE; i != 0; i--, ptr++)
-		*ptr = -1;
-
-	int n_cores = 0;
-	struct dirent *entry;
-	char buf[512];
-	errno = 0;
-
-	/* Find one cpu per one core */
-	while ((entry = readdir(sysfs_cpudir)) != NULL) {
-		if (!memcmp(entry->d_name, "cpu", 3)) {
-			int cpu_id, core_id, package_id;
-
-			cpu_id = atoi(entry->d_name + 3);
-
-			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/"
-				"core_id", entry->d_name);
-			if (file_read_num(buf, &core_id)) {
-				fprintf(stderr, "Error: set_single_cpus: "
-					"core_id read failed\n");
-				goto handle_err;
-			}
-
-			sprintf(buf, "/sys/bus/cpu/devices/%s/topology/"
-				"physical_package_id", entry->d_name);
-			if (file_read_num(buf, &package_id)) {
-				fprintf(stderr, "Error: set_single_cpus: "
-					"package_id read failed\n");
-				goto handle_err;
-			}
-			
-			DUMP_LOG(fprintf(stderr, "package: %2.2d "
-					"core: %2.2d cpu: %2.2d\n",
-					 package_id, core_id, cpu_id));
-			if (assoc_cpus[core_id] == -1)
-				n_cores++;
-			assoc_cpus[core_id] = cpu_id;
-		}
-	}
-
-	if (errno) {
-		perror("Error: readdir");
-		goto handle_err;
-	}
-
-	/* Set single-core cpus in cpuset */
-	CPU_ZERO(cpuset);
-	int id = 0;
-	for (int n = n_cores; n != 0; id++) {
-		if (assoc_cpus[id] != -1) {
-			DUMP_LOG(fprintf(stderr, "CPU_SET cpu = %d\n",
-					 assoc_cpus[id]));
-			CPU_SET(assoc_cpus[id], cpuset);
-			n--;
-		}
-	}
-
-	free(assoc_cpus);
-	closedir(sysfs_cpudir);
-	return n_cores;
-
-handle_err:
-	free(assoc_cpus);
-	closedir(sysfs_cpudir);
-	return -1;
-}
-
-int cpu_set_search_next(int cpu, cpu_set_t *set)
-{
-	for (int i = cpu + 1; i < CPU_SETSIZE; i++) {
-		if (CPU_ISSET(cpu, set))
-			return i;
-	}
-	return 0;
-}
-
 
 struct task_container {
 	double base;
@@ -300,34 +206,45 @@ handle_err:
 	return -1;
 }
 
-int main(int argc, char *argv[])
+int process_args(int argc, char *argv[], int *n_threads)
 {
-	struct cpu_topology topo;
-	if (get_cpu_topology(&topo)) {
-		fprintf(stderr, "Error: get_cpu_topology failed\n");
-		exit(EXIT_FAILURE);
-	}
-
 	if (argc != 2) {
-		fprintf(stderr, "Error: wrong argv\n");
-		exit(EXIT_FAILURE);
+		fprintf(stderr, "Error: only 1 arg required\n");
+		return -1;
 	}
-
+	
 	char *endptr;
 	errno = 0;
 	long tmp = strtol(argv[1], &endptr, 10);
 	if (errno || *endptr != '\0' || tmp < 1 || tmp > INT_MAX) {
 		fprintf(stderr, "Error: wrong number of threads\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
-	int n_threads = tmp;
+	*n_threads = tmp;
+	
+	return 0;
+}
 
-	cpu_set_t cpuset;
-	int n_cores = set_single_cpus(&cpuset);
-	if (n_cores == -1) {
-		perror("Error: set_single_cores");
+int main(int argc, char *argv[])
+{
+	int n_threads;
+	if (process_args(argc, argv, &n_threads)) {
+		fprintf(stderr, "Error: wrong argv\n");
 		exit(EXIT_FAILURE);
 	}
+
+	struct cpu_topology topo;
+	cpu_set_t cpuset;
+	if (get_cpu_topology(&topo)) {
+		fprintf(stderr, "Error: get_cpu_topology\n");
+		exit(EXIT_FAILURE);
+	}
+	DUMP_LOG(dump_cpu_topology(stderr, &topo));
+	if (one_cpu_per_core_cpu_topology(&topo, &cpuset)) {
+		fprintf(stderr, "Error: one_cpu_per_core_cpu_topology\n");
+		exit(EXIT_FAILURE);
+	}
+	DUMP_LOG(dump_cpu_set(stderr, &cpuset));
 
 	double from = 0;
 	double to = 500000;

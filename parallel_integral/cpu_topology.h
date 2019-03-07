@@ -6,6 +6,7 @@
 #endif
 
 #include <sched.h>
+#include <stdio.h>
 
 struct cpu_topology_elem {
 	int package_id;
@@ -14,7 +15,7 @@ struct cpu_topology_elem {
 };
 
 struct cpu_topology {
-	struct cpu_topology_elem cpu[CPU_SETSIZE];
+	struct cpu_topology_elem cpu[CPU_SETSIZE - 1];
 	int max_package_id;
 	int max_core_id;
 	int max_cpu_id;
@@ -23,7 +24,9 @@ struct cpu_topology {
 int  get_cpu_topology(struct cpu_topology *topo);
 int dump_cpu_topology(FILE *stream, struct cpu_topology *topo);
 
-/* One cpu per one core */
-int get_single_cpus_cpu_topology(struct cpu_topology *topo, cpu_set_t *cpuset);
+int one_cpu_per_core_cpu_topology(struct cpu_topology *topo, cpu_set_t *cpuset);
 
-#endif /* CPU_TOPOLOGY_H_
+int dump_cpu_set(FILE *stream, cpu_set_t *cpuset);
+int cpu_set_search_next(int cpu, cpu_set_t *set);
+
+#endif /* CPU_TOPOLOGY_H_ */

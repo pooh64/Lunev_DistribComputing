@@ -7,7 +7,7 @@
 #include <dirent.h>
 
 #include <errno.h>
-#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <limits.h>
 
@@ -118,14 +118,68 @@ int dump_cpu_topology(FILE *stream, struct cpu_topology *topo)
 	fprintf(stream, "max_core_id:    %3.3d\n", topo->max_core_id);
 	fprintf(stream, "max_cpu_id:     %3.3d\n", topo->max_cpu_id);
 	
-	for (int i = 0; i < topo->max_cpu_id; i++) {
+	for (int i = 0; i < topo->max_cpu_id + 1; i++) {
 		fprintf(stream, "cpu[%d]: ", i);
-		fprintf(stream, "package_id: %3.3d ", topo->cpu[i]->package_id);
-		fprintf(stream, "core_id: %3.3d ",    topo->cpu[i]->core_id);
-		fprintf(stream, "cpu_id: %3.3d\n",    topo->cpu[i]->cpu_id);
+		fprintf(stream, ".package_id: %3.3d ", topo->cpu[i].package_id);
+		fprintf(stream, ".core_id: %3.3d ",    topo->cpu[i].core_id);
+		fprintf(stream, ".cpu_id: %3.3d\n",    topo->cpu[i].cpu_id);
 	}
 	
 	fprintf(stream, "--- /dump_cpu_topology ---\n");
 	return 0;
 }
 
+int one_cpu_per_core_cpu_topology(struct cpu_topology *topo, cpu_set_t *cpuset)
+{
+	int n_packages = topo->max_package_id + 1;
+	int n_cores    = topo->max_core_id    + 1;
+	int n_cpus     = topo->max_cpu_id     + 1;
+	int assoc_cpu_s = n_packages * n_cores;
+
+	/* assoc_cpu[n_packages][n_cores] */
+	int *assoc_cpu = malloc(sizeof(int) * assoc_cpu_s);
+	if (!assoc_cpu) {
+		perror("Error: one_cpu_per_core_cpu_topology: malloc");
+		return -1;
+	}
+
+	for (int i = 0; i < assoc_cpu_s; i++)
+		assoc_cpu[i] = -1;
+
+	for (int i = 0; i < n_cpus; i++) {
+		assoc_cpu[topo->cpu[i].package_id * n_cores +
+			  topo->cpu[i].core_id] = topo->cpu[i].cpu_id;
+	}
+
+	CPU_ZERO(cpuset);
+	for (int i = 0; i < assoc_cpu_s; i++) {
+		if (assoc_cpu[i] != -1)
+			CPU_SET(assoc_cpu[i], cpuset);
+	}
+
+	free(assoc_cpu);
+	return 0;
+}
+
+int dump_cpu_set(FILE *stream, cpu_set_t *cpuset)
+{
+	fprintf(stream, "--- dump_cpu_set: ---\n");
+
+	for (int i = 0; i < CPU_SETSIZE - 1; i++) {
+		if (CPU_ISSET(i, cpuset))
+			fprintf(stream, "cpu_id: %3.3d is set\n", i);
+	}
+
+	fprintf(stream, "--- /dump_cpu_set ---\n");
+	
+	return 0;
+}
+
+int cpu_set_search_next(int cpu, cpu_set_t *set)
+{
+	for (int i = cpu + 1; i < CPU_SETSIZE; i++) {
+		if (CPU_ISSET(cpu, set))
+			return i;
+	}
+	return 0;
+}
