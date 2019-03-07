@@ -178,7 +178,7 @@ int dump_cpu_set(FILE *stream, cpu_set_t *cpuset)
 int cpu_set_search_next(int cpu, cpu_set_t *set)
 {
 	for (int i = cpu + 1; i < CPU_SETSIZE; i++) {
-		if (CPU_ISSET(cpu, set))
+		if (CPU_ISSET(i, set))
 			return i;
 	}
 	return 0;

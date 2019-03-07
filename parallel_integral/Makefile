@@ -1,5 +1,5 @@
-CFLAGS := -c -g -O2 -Wall
-LDFLAGS := -lpthread
+CFLAGS := -c -g -O2 -Wall -std=c99
+LDFLAGS := -pthread
 
 BUILD_DIR := build
 -include *.d
@@ -22,4 +22,3 @@ INTEGRAL_OBJ := $(addprefix $(BUILD_DIR)/,$(INTEGRAL_SRC:.c=.o))
 integral: $(BUILD_DIR)/integral
 $(BUILD_DIR)/integral: $(INTEGRAL_OBJ)
 	$(CC) $(LDFLAGS) $(INTEGRAL_OBJ) -o $@
-	cp ./test_scaling.sh $(BUILD_DIR)

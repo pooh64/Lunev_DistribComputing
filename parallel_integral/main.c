@@ -34,9 +34,9 @@
  * /sys/devices/system/cpu/cpufreq/boost */
 
 struct task_container {
-	double base;
-	double step_wdth;
-	double accum;
+	long double base;
+	long double step_wdth;
+	long double accum;
 
 	size_t start_step;
 	size_t n_steps;
@@ -52,7 +52,7 @@ struct task_container_align {
 		sizeof(struct task_container)];
 };
 
-static inline double func_to_integrate(double x)
+static inline long double func_to_integrate(long double x)
 {
 	return 2 / (1 + x * x);
 	/* return 1; */
@@ -62,13 +62,13 @@ void *integrate_task_worker(void *arg)
 {
 	struct task_container *pack = arg;
 	size_t cur_step = pack->start_step;
-	double sum = 0;
-	double base = pack->base;
-	double step_wdth = pack->step_wdth;
+	long double sum = 0;
+	long double base = pack->base;
+	long double step_wdth = pack->step_wdth;
 
-	DUMP_LOG(double dump_from = base + cur_step * step_wdth);
-	DUMP_LOG(double dump_to   = base + (cur_step + pack->n_steps) * 
-		 		    step_wdth);
+	DUMP_LOG(long double dump_from = base + cur_step * step_wdth);
+	DUMP_LOG(long double dump_to   = base + (cur_step + pack->n_steps) * 
+		 		       	 step_wdth);
 
 	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
 		sum += func_to_integrate(base + cur_step * step_wdth) * 
@@ -77,22 +77,22 @@ void *integrate_task_worker(void *arg)
 
 	pack->accum = sum;
 
-	DUMP_LOG(fprintf(stderr, "worker: from: %9.9lg "
-				 "to: %9.9lg sum: %9.9lg\n",
+	DUMP_LOG(fprintf(stderr, "worker: from: %9.9Lg "
+				 "to: %9.9Lg sum: %9.9Lg\n",
 			 dump_from, dump_to, sum));
 
 	return NULL;
 }
 
 void integrate_split_tasks(struct task_container_align *tasks, int n_tasks,
-	cpu_set_t *cpuset, size_t n_steps, double base, double step)
+	cpu_set_t *cpuset, size_t n_steps, long double base, long double step)
 {
 	int n_cpus = CPU_COUNT(cpuset);
 	if (n_tasks < n_cpus)
 		n_cpus = n_tasks;
 
 	size_t cur_step = 0;
-	int    cur_task  = 0;
+	int    cur_task = 0;
 
 	int cpu = cpu_set_search_next(-1, cpuset);
 	for (; n_cpus != 0; n_cpus--, cpu = cpu_set_search_next(cpu, cpuset)) {
@@ -145,10 +145,14 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 		CPU_SET(ptr->cpu, &cpuset_tmp);
 		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %d\n",
 				 ptr->cpu));
-		pthread_attr_setaffinity_np(&attr,
-					    sizeof(cpuset_tmp), &cpuset_tmp);
-		int ret = pthread_create(&ptr->thread, &attr,
-					 integrate_task_worker, ptr);
+		int ret = pthread_attr_setaffinity_np(&attr,
+			sizeof(cpuset_tmp), &cpuset_tmp);
+		if (ret) {
+			perror("Error: pthread_attr_setaffinity_np");
+			return -1;
+		}
+		ret = pthread_create(&ptr->thread, &attr,
+			integrate_task_worker, ptr);
 		if (ret) {
 			perror("Error: pthread_create");
 			return -1;
@@ -170,25 +174,30 @@ int integrate_join_tasks(struct task_container_align *tasks, int n_tasks)
 	return 0;
 }
 
-double integrate_accumulate_result(struct task_container_align *tasks,
-				   int n_tasks)
+long double integrate_accumulate_result(struct task_container_align *tasks,
+	int n_tasks)
 {
-	double accum = 0;
+	long double accum = 0;
 	for (int i = 0; i < n_tasks; i++) {
 		accum += tasks[i].task.accum;
 	}
 	return accum;
 }
 
-int integrate_tasks_unused_cpus(struct task_container_align *tasks, int n_tasks,
-				cpu_set_t *cpuset, cpu_set_t *result)
+void integrate_tasks_unused_cpus(struct task_container_align *tasks,
+	int n_tasks, cpu_set_t *cpuset, cpu_set_t *result)
 {
 	CPU_ZERO(result);
-	for (int i = 0
+	for (int i = 0; i < CPU_SETSIZE; i++) {
+		if (CPU_ISSET(i, cpuset))
+			CPU_SET(i, result);
+	}
+	for (int i = 0; i < n_tasks; i++)
+		CPU_CLR(tasks[i].task.cpu, result);
 }
 
 int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
-	      double base, double step, double *result)
+	long double base, long double step, long double *result)
 {
 	/* Allocate cache-aligned task containers */
 	struct task_container_align *tasks = 
@@ -226,6 +235,84 @@ handle_err:
 	free(tasks);
 	return -1;
 }
+
+
+int integrate_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+	long double base, long double step, long double *result)
+{
+	/* Allocate cache-aligned task containers */
+	struct task_container_align *tasks = 
+		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
+	if (!tasks) {
+		perror("Error: aligned_alloc");
+		return -1;
+	}
+	
+	/* Prepare bad tasks */
+	int n_bad_threads = 0;
+	struct task_container_align *bad_tasks;
+	if (CPU_COUNT(cpuset) > n_threads) {
+		n_bad_threads = CPU_COUNT(cpuset) - n_threads;
+		bad_tasks = aligned_alloc(sizeof(*bad_tasks),
+			sizeof(*bad_tasks) * n_bad_threads);
+		if (!bad_tasks) {
+			perror("Error: aligned_alloc");
+			free(tasks);
+			return -1;
+		}
+	}
+
+	/* Split task btw cpus and threads */
+	integrate_split_tasks(tasks, n_threads, cpuset, n_steps, base, step);
+	
+	/* Split bad tasks */
+	if (n_bad_threads) {
+		cpu_set_t bad_cpuset;
+		integrate_tasks_unused_cpus(tasks, n_threads,
+			cpuset, &bad_cpuset);
+		size_t n_bad_steps = (n_steps / n_threads) * n_bad_threads;
+		integrate_split_tasks(bad_tasks, n_bad_threads, &bad_cpuset,
+			n_bad_steps, base, step);
+	}
+	
+	/* Move main thread to other cpu */
+	if (set_this_thread_cpu(tasks[0].task.cpu))
+		goto handle_err;
+	
+	/* Run bad tasks */
+	if (n_bad_threads && integrate_run_tasks(bad_tasks, n_bad_threads))
+		goto handle_err;
+	
+	/* Run non-main tasks */
+	if (integrate_run_tasks(tasks + 1, n_threads - 1))
+		goto handle_err;
+
+	/* Run main task */
+	integrate_task_worker(&tasks[0].task);
+	
+	/* Finish bad tasks */
+	if (n_bad_threads && integrate_join_tasks(bad_tasks, n_bad_threads))
+		goto handle_err;
+	
+	/* Finish non-main tasks */
+	if (integrate_join_tasks(tasks + 1, n_threads - 1))
+		goto handle_err;
+	
+	/* Sumary */
+	*result = integrate_accumulate_result(tasks, n_threads);
+
+	if (n_bad_threads)
+		free(bad_tasks);
+	free(tasks);
+	return 0;
+
+handle_err:
+	if (n_bad_threads)
+		free(bad_tasks);
+	free(tasks);
+	return -1;
+}
+
 
 int process_args(int argc, char *argv[], int *n_threads)
 {
@@ -267,17 +354,19 @@ int main(int argc, char *argv[])
 	}
 	DUMP_LOG(dump_cpu_set(stderr, &cpuset));
 
-	double from = 0;
-	double to = 10000;
-	double step = 0.0001;
-	double result;
+	long double from = 0;
+	long double to = 1000;
+	long double step = 1 / to;
+	long double result;
 	size_t n_steps = (to - from) / step;
-	if (integrate(n_threads, &cpuset, n_steps, from, step, &result) == -1) {
+	if (integrate_abused(n_threads, &cpuset,
+		n_steps, from, step, &result) == -1) {
 		perror("Error: integrate");
 		exit(EXIT_FAILURE);
 	}
 
-	printf("result: %.*lg\n", DBL_DIG, result);
+	printf("result : %.*Lg\n", LDBL_DIG, result);
+	printf("+1/xmax: %.*Lg\n", LDBL_DIG, result + 1 / to);
 
 	return 0;
 }
