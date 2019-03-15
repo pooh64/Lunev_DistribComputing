@@ -177,9 +177,16 @@ int dump_cpu_set(FILE *stream, cpu_set_t *cpuset)
 
 int cpu_set_search_next(int cpu, cpu_set_t *set)
 {
-	for (int i = cpu + 1; i < CPU_SETSIZE; i++) {
+	for (int i = cpu + 1; i < CPU_SETSIZE - 1; i++) {
 		if (CPU_ISSET(i, set))
 			return i;
 	}
 	return 0;
+}
+
+void get_full_cpuset(struct cpu_topology *topo, cpu_set_t *set)
+{
+	CPU_ZERO(set);
+	for (int i = 0; i < topo->max_cpu_id + 1; i++)
+		CPU_SET(topo->cpu[i].cpu_id, set);
 }

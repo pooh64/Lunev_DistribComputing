@@ -347,18 +347,16 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error: get_cpu_topology\n");
 		exit(EXIT_FAILURE);
 	}
+	get_full_cpuset(&topo, &cpuset);
 	DUMP_LOG(dump_cpu_topology(stderr, &topo));
-	if (one_cpu_per_core_cpu_topology(&topo, &cpuset)) {
-		fprintf(stderr, "Error: one_cpu_per_core_cpu_topology\n");
-		exit(EXIT_FAILURE);
-	}
 	DUMP_LOG(dump_cpu_set(stderr, &cpuset));
 
 	long double from = 0;
-	long double to = 1000;
+	long double to = 50000;
 	long double step = 1 / to;
 	long double result;
 	size_t n_steps = (to - from) / step;
+
 	if (integrate_abused(n_threads, &cpuset,
 		n_steps, from, step, &result) == -1) {
 		perror("Error: integrate");
