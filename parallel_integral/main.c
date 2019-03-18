@@ -158,6 +158,7 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 			return -1;
 		}
 	}
+	pthread_attr_destroy(&attr);
 	return 0;
 }
 
