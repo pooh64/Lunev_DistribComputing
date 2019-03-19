@@ -1,4 +1,4 @@
-#include "cpu_topology.h"
+#include "integrate.h"
 
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -18,21 +18,6 @@
 #include <sched.h>
 #include <limits.h>
 
-#define DUMP_LOG_ENABLED
-#ifdef DUMP_LOG_ENABLED
-#define DUMP_LOG(arg) arg
-#else
-#define DUMP_LOG(arg)
-#endif
-
-#define TRACE_LINE fprintf(stderr, "line: %d\n", __LINE__)
-
-/* Todo:
- *
- * Turbo boost:
- * https://www.kernel.org/doc/Documentation/cpu-freq/boost.txt
- * /sys/devices/system/cpu/cpufreq/boost */
-
 struct task_container {
 	long double base;
 	long double step_wdth;
@@ -45,17 +30,15 @@ struct task_container {
 	int cpu;
 };
 
-#define CACHE_CELL_ALIGN 128
 struct task_container_align {
 	struct task_container task;
-	uint8_t padding[CACHE_CELL_ALIGN -
+	uint8_t padding[CACHE_LINE_ALIGN -
 		sizeof(struct task_container)];
 };
 
 static inline long double func_to_integrate(long double x)
 {
 	return 2 / (1 + x * x);
-	/* return 1; */
 }
 
 void *integrate_task_worker(void *arg)
@@ -197,7 +180,7 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 		CPU_CLR(tasks[i].task.cpu, result);
 }
 
-int integrate(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+int integrate_multicore(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
 	/* Allocate cache-aligned task containers */
@@ -237,8 +220,8 @@ handle_err:
 	return -1;
 }
 
-
-int integrate_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+/* Baaaad */
+int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
 	/* Allocate cache-aligned task containers */
@@ -312,60 +295,4 @@ handle_err:
 		free(bad_tasks);
 	free(tasks);
 	return -1;
-}
-
-
-int process_args(int argc, char *argv[], int *n_threads)
-{
-	if (argc != 2) {
-		fprintf(stderr, "Error: only 1 arg required\n");
-		return -1;
-	}
-	
-	char *endptr;
-	errno = 0;
-	long tmp = strtol(argv[1], &endptr, 10);
-	if (errno || *endptr != '\0' || tmp < 1 || tmp > INT_MAX) {
-		fprintf(stderr, "Error: wrong number of threads\n");
-		return -1;
-	}
-	*n_threads = tmp;
-	
-	return 0;
-}
-
-int main(int argc, char *argv[])
-{
-	int n_threads;
-	if (process_args(argc, argv, &n_threads)) {
-		fprintf(stderr, "Error: wrong argv\n");
-		exit(EXIT_FAILURE);
-	}
-
-	struct cpu_topology topo;
-	cpu_set_t cpuset;
-	if (get_cpu_topology(&topo)) {
-		fprintf(stderr, "Error: get_cpu_topology\n");
-		exit(EXIT_FAILURE);
-	}
-	get_full_cpuset(&topo, &cpuset);
-	DUMP_LOG(dump_cpu_topology(stderr, &topo));
-	DUMP_LOG(dump_cpu_set(stderr, &cpuset));
-
-	long double from = 0;
-	long double to = 50000;
-	long double step = 1 / to;
-	long double result;
-	size_t n_steps = (to - from) / step;
-
-	if (integrate_abused(n_threads, &cpuset,
-		n_steps, from, step, &result) == -1) {
-		perror("Error: integrate");
-		exit(EXIT_FAILURE);
-	}
-
-	printf("result : %.*Lg\n", LDBL_DIG, result);
-	printf("+1/xmax: %.*Lg\n", LDBL_DIG, result + 1 / to);
-
-	return 0;
 }
