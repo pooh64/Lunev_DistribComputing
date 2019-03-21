@@ -16,7 +16,7 @@
 
 #define CACHE_LINE_ALIGN 128
 
-int integrate_multicore       (int n_threads, cpu_set_t *cpuset, size_t n_steps,
+int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result);
 
 int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,

@@ -18,6 +18,9 @@
 #include <sched.h>
 #include <limits.h>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 struct task_container {
 	long double base;
 	long double step_wdth;
@@ -180,9 +183,11 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 		CPU_CLR(tasks[i].task.cpu, result);
 }
 
-int integrate_multicore(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
+	int n_threads = CPU_COUNT(cpuset);
+
 	/* Allocate cache-aligned task containers */
 	struct task_container_align *tasks = 
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
@@ -296,3 +301,84 @@ handle_err:
 	free(tasks);
 	return -1;
 }
+
+
+int worker_accept_request()
+{
+	
+}
+
+
+int integrate_network_worker(cpu_set_t *cpuset)
+{
+	DUMP_LOG(fprintf(stderr, "Starting worker\n"));
+	char buf[1];
+	struct sockaddr_in broadcast_addr;
+	int sk_broadcast = socket(PF_INET, SOCK_DGRAM, 0);
+	if (!bind(sk_broadcast, &broadcast_addr, sizeof(broadcast_addr)) {
+		perror("Error: bind");
+		return -1;
+	}
+	int addr_len = sizeof(addr);
+	recvfrom(sk_broadcast, buf, sizeof(buf), 0, &broadcast_addr, &
+
+
+
+
+	struct sockaddr_in worker_addr = {
+		.sin_family = AF_INET;
+		.sin_port = htons(4000);
+		.sin_addr = INADDR_ANY;				////////////////
+	};
+	struct sockaddr_in starter_addr;
+
+	int sk_tcp = socket(PF_INET, SOCK_STREAM, 0);
+	if (sk_tcp == -1) {
+		perror("Error: socket");
+		return -1;
+	}
+	
+	if (!bind(sk_tcp, &worker_addr, sizeof(worker_addr)) {
+		perror("Error: bind");
+		return -1;
+	}
+	
+	if (!listen(sk_tcp, 256)) {
+		perror("Error: listen");
+		return -1;
+	}
+	
+	int addr_len = sizeof(addr);				////////////////
+	
+	int sk_stream = accept(sk_tcp, &starter_addr, (void*) &addr_len);
+	if (sk_stream == -1) {
+		perror("Error: accept");
+		return -1;
+	}
+	
+	
+}
+
+
+int integrate_network_starter(size_t n_steps, long double base,
+	long double step, long double *result)
+{
+	struct sockaddr_in addr = {
+		.sin_family = AF_INET;
+		.sin_port = htons(4000);
+		.sin_addr = INADDR_ANY;
+	};
+
+	int sk = socket(PF_INET, SOCK_STREAM, 0);
+	if (sk == -1) {
+		perror("Error: socket");
+		return -1;
+	}
+	
+	if (!connect(sk, &addr, sizeof(addr))) {
+		perror("Error: connect");
+		return -1;
+	}
+	
+}
+
