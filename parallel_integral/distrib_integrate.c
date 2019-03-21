@@ -30,8 +30,10 @@ int process_args(int argc, char *argv[], int *mode)
 int main(int argc, char *argv[])
 {
 	int mode;
-	if (!process_args(argc, argv, &mode))
+	if (process_args(argc, argv, &mode))
 		exit(EXIT_FAILURE);
+
+	printf("aaaaa\n");
 	
 	if (mode == 0)
 		integrate_network_worker(NULL);

@@ -14,7 +14,9 @@
 
 #define TRACE_LINE (fprintf(stderr, "line: %d\n", __LINE__))
 
-#define CACHE_LINE_ALIGN 128
+#define CACHE_LINE_ALIGN 256
+#define INTEGRATE_UDP_PORT 4010
+#define INTEGRATE_TCP_PORT 4011
 
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result);

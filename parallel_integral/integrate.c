@@ -63,9 +63,9 @@ void *integrate_task_worker(void *arg)
 
 	pack->accum = sum;
 
-	DUMP_LOG(fprintf(stderr, "worker: from: %9.9Lg "
-				 "to: %9.9Lg sum: %9.9Lg\n",
-			 dump_from, dump_to, sum));
+	DUMP_LOG(fprintf(stderr, "worker: from: %Le "
+				 "to: %Le sum: %Le arg: %p\n",
+			 dump_from, dump_to, sum, arg));
 
 	return NULL;
 }
@@ -129,6 +129,9 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 		struct task_container *ptr = &tasks[i].task;
 		CPU_ZERO(&cpuset_tmp);
 		CPU_SET(ptr->cpu, &cpuset_tmp);
+
+		printf("%lu %lu\n", sizeof(*ptr), sizeof(tasks[i]));
+
 		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %d\n",
 				 ptr->cpu));
 		int ret = pthread_attr_setaffinity_np(&attr,
@@ -324,10 +327,10 @@ int integrate_network_worker(cpu_set_t *cpuset)
 	
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(4000);
+	addr.sin_port = htons(INTEGRATE_UDP_PORT);
 	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
 	
-	if (!bind(sk_udp, &addr, sizeof(addr))) {
+	if (bind(sk_udp, &addr, sizeof(addr))) {
 		perror("Error: bind");
 		return -1;
 	}
@@ -342,6 +345,11 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			return -1;
 		}
 		DUMP_LOG(fprintf(stderr, "Received udp_msg: %d\n", udp_msg));
+		
+		// check msg
+		// receive task (tcp)
+		// do
+		// send result	
 	}
 	
 	return 0;
@@ -369,7 +377,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(4000);
+	addr.sin_port = htons(INTEGRATE_UDP_PORT);
 	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
 	
 	int udp_msg = 1234;
@@ -379,6 +387,23 @@ int integrate_network_starter(size_t n_steps, long double base,
 		perror("Error: sendto");
 		return -1;
 	}
+	
+	close(sk_udp);
+	
+	/////
+	
+	int sk_tcp = socket(PF_INET, SOCK_STREAM, 0);
+	if (sk_tcp == -1) {
+		perror("Error: socket");
+		return -1;
+	}
+	
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(INTEGRATE_TCP_PORT);
+	addr.sin_addr.s_addr = INADDR_ANY;
+
+	// send task (tcp)
+	// wait for results (with timeout)
 	
 	return 0;
 }
