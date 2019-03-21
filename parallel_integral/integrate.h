@@ -23,4 +23,9 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result);
 
 
+int integrate_network_starter(size_t n_steps, long double base,
+	long double step, long double *result);
+
+int integrate_network_worker(cpu_set_t *cpuset);
+
 #endif /* INTEGRATE_H_ */

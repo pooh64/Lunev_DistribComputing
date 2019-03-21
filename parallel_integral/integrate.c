@@ -303,82 +303,83 @@ handle_err:
 }
 
 
-int worker_accept_request()
-{
-	
-}
-
-
 int integrate_network_worker(cpu_set_t *cpuset)
 {
 	DUMP_LOG(fprintf(stderr, "Starting worker\n"));
-	char buf[1];
-	struct sockaddr_in broadcast_addr;
-	int sk_broadcast = socket(PF_INET, SOCK_DGRAM, 0);
-	if (!bind(sk_broadcast, &broadcast_addr, sizeof(broadcast_addr)) {
-		perror("Error: bind");
-		return -1;
-	}
-	int addr_len = sizeof(addr);
-	recvfrom(sk_broadcast, buf, sizeof(buf), 0, &broadcast_addr, &
-
-
-
-
-	struct sockaddr_in worker_addr = {
-		.sin_family = AF_INET;
-		.sin_port = htons(4000);
-		.sin_addr = INADDR_ANY;				////////////////
-	};
-	struct sockaddr_in starter_addr;
-
-	int sk_tcp = socket(PF_INET, SOCK_STREAM, 0);
-	if (sk_tcp == -1) {
+	
+	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sk_udp == -1) {
 		perror("Error: socket");
 		return -1;
 	}
 	
-	if (!bind(sk_tcp, &worker_addr, sizeof(worker_addr)) {
+	int val = 1;
+	ssize_t ret;
+	
+	ret = setsockopt(sk_udp, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+	if (ret == -1) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(4000);
+	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
+	
+	if (!bind(sk_udp, &addr, sizeof(addr))) {
 		perror("Error: bind");
 		return -1;
 	}
 	
-	if (!listen(sk_tcp, 256)) {
-		perror("Error: listen");
-		return -1;
+	while (1) {
+		int udp_msg;
+		socklen_t addr_len;
+		DUMP_LOG(fprintf(stderr, "Waiting for udp_msg\n"));
+		ret = recvfrom(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, &addr_len);
+		if (ret == -1) {
+			perror("Error: recvfrom");
+			return -1;
+		}
+		DUMP_LOG(fprintf(stderr, "Received udp_msg: %d\n", udp_msg));
 	}
 	
-	int addr_len = sizeof(addr);				////////////////
-	
-	int sk_stream = accept(sk_tcp, &starter_addr, (void*) &addr_len);
-	if (sk_stream == -1) {
-		perror("Error: accept");
-		return -1;
-	}
-	
-	
+	return 0;
 }
 
 
 int integrate_network_starter(size_t n_steps, long double base,
 	long double step, long double *result)
 {
-	struct sockaddr_in addr = {
-		.sin_family = AF_INET;
-		.sin_port = htons(4000);
-		.sin_addr = INADDR_ANY;
-	};
-
-	int sk = socket(PF_INET, SOCK_STREAM, 0);
-	if (sk == -1) {
+	DUMP_LOG(fprintf(stderr, "Starting starter\n"));
+	
+	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sk_udp == -1) {
 		perror("Error: socket");
 		return -1;
 	}
 	
-	if (!connect(sk, &addr, sizeof(addr))) {
-		perror("Error: connect");
+	int val = 1;
+	ssize_t ret;
+	ret = setsockopt(sk_udp, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+	if (ret == -1) {
+		perror("Error: setsockopt");
 		return -1;
 	}
 	
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(4000);
+	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
+	
+	int udp_msg = 1234;
+	DUMP_LOG(fprintf(stderr, "Sending udp_msg: %d\n", udp_msg));
+	ret = sendto(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, sizeof(addr));
+	if (ret == -1) {
+		perror("Error: sendto");
+		return -1;
+	}
+	
+	return 0;
 }
 

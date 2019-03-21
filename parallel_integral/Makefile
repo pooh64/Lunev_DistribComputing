@@ -4,7 +4,7 @@ LDFLAGS := -pthread
 BUILD_DIR := build
 -include *.d
 
-all: multicore_integrate
+all: multicore_integrate distrib_integrate
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(@D)
@@ -22,3 +22,11 @@ multicore_integrate: $(BUILD_DIR)/multicore_integrate
 $(BUILD_DIR)/multicore_integrate: $(MULTICORE_INTEGRATE_OBJ)
 	$(CC) $(LDFLAGS) $(MULTICORE_INTEGRATE_OBJ) -o $@
 
+
+DISTRIB_INTEGRATE_SRC := distrib_integrate.c integrate.c cpu_topology.c
+DISTRIB_INTEGRATE_OBJ := $(addprefix $(BUILD_DIR)/,$(DISTRIB_INTEGRATE_SRC:.c=.o))
+
+.PHONY: distrib_integrate
+distrib_integrate: $(BUILD_DIR)/distrib_integrate
+$(BUILD_DIR)/distrib_integrate: $(DISTRIB_INTEGRATE_OBJ)
+	$(CC) $(LDFLAGS) $(DISTRIB_INTEGRATE_OBJ) -o $@
