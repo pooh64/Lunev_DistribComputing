@@ -1,10 +1,11 @@
-CFLAGS := -c -g -O2 -Wall -std=c99 -MD
+CFLAGS := -c -g -O1 -Wall -std=c99 -MD
 LDFLAGS := -pthread
 
 BUILD_DIR := build
--include $(BUILD_DIR)/*.d
 
 all: multicore_integrate distrib_integrate
+
+-include $(BUILD_DIR)/*.d
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(@D)

@@ -111,7 +111,7 @@ int set_this_thread_cpu(int cpu)
 	cpu_set_t cpuset_tmp;
 	CPU_ZERO(&cpuset_tmp);
 	CPU_SET(cpu, &cpuset_tmp);
-	DUMP_LOG(fprintf(stderr, "setting this thread to cpu = %d\n", cpu));
+	DUMP_LOG(fprintf(stderr, "setting main   to cpu = %2d\n", cpu)); 
 	if (sched_setaffinity(getpid(), 
 	    sizeof(cpuset_tmp), &cpuset_tmp) == -1) {
 		perror("Error: sched_setaffinity");
@@ -129,10 +129,7 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 		struct task_container *ptr = &tasks[i].task;
 		CPU_ZERO(&cpuset_tmp);
 		CPU_SET(ptr->cpu, &cpuset_tmp);
-
-		printf("%lu %lu\n", sizeof(*ptr), sizeof(tasks[i]));
-
-		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %d\n",
+		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %2d\n",
 				 ptr->cpu));
 		int ret = pthread_attr_setaffinity_np(&attr,
 			sizeof(cpuset_tmp), &cpuset_tmp);

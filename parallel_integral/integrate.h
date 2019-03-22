@@ -14,7 +14,7 @@
 
 #define TRACE_LINE (fprintf(stderr, "line: %d\n", __LINE__))
 
-#define CACHE_LINE_ALIGN 256
+#define CACHE_LINE_ALIGN 4096	/* Tired looking for error */
 #define INTEGRATE_UDP_PORT 4010
 #define INTEGRATE_TCP_PORT 4011
 
