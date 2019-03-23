@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 	}
 
 	printf("result : %.*Lg\n", LDBL_DIG, result);
-	printf("+1/xmax: %.*Lg\n", LDBL_DIG, result + 1 / to);
+	// printf("+1/xmax: %.*Lg\n", LDBL_DIG, result + 1 / to);
 
 	return 0;
 }

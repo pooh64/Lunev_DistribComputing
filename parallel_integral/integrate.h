@@ -14,7 +14,15 @@
 
 #define TRACE_LINE (fprintf(stderr, "line: %d\n", __LINE__))
 
-#define CACHE_LINE_ALIGN 4096	/* Tired looking for error */
+/* Tired looking for error, 128 is enough here */
+#define CACHE_LINE_ALIGN 1024
+
+/* Switch from long double to double removes L1 missrate */
+typedef double worker_tmp_t;
+
+/* #define INTEGRATE_FUNC(x) (2 / (x * x + 1)) */
+#define INTEGRATE_FUNC(x) (x)
+
 #define INTEGRATE_UDP_PORT 4010
 #define INTEGRATE_TCP_PORT 4011
 

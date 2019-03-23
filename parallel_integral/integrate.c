@@ -39,33 +39,27 @@ struct task_container_align {
 		sizeof(struct task_container)];
 };
 
-static inline long double func_to_integrate(long double x)
-{
-	return 2 / (1 + x * x);
-}
-
 void *integrate_task_worker(void *arg)
 {
 	struct task_container *pack = arg;
-	size_t cur_step = pack->start_step;
-	long double sum = 0;
-	long double base = pack->base;
-	long double step_wdth = pack->step_wdth;
+	worker_tmp_t base      = pack->base;
+	worker_tmp_t step_wdth = pack->step_wdth;
+	size_t       n_steps   = pack->n_steps;
+	size_t       cur_step  = pack->start_step;
+	worker_tmp_t sum = 0;
 
-	DUMP_LOG(long double dump_from = base + cur_step * step_wdth);
-	DUMP_LOG(long double dump_to   = base + (cur_step + pack->n_steps) * 
-		 		       	 step_wdth);
+	DUMP_LOG(worker_tmp_t dump_from = base + cur_step * step_wdth);
+	DUMP_LOG(worker_tmp_t dump_to   = base + (cur_step + pack->n_steps) * 
+		 		       	  step_wdth);
 
-	for (size_t i = pack->n_steps; i != 0; i--, cur_step++) {
-		sum += func_to_integrate(base + cur_step * step_wdth) * 
-		       step_wdth;
-	}
+	for (size_t i = n_steps; i != 0; i--, cur_step++)
+		sum += (INTEGRATE_FUNC(base + cur_step * step_wdth)) * step_wdth;
 
 	pack->accum = sum;
 
-	DUMP_LOG(fprintf(stderr, "worker: from: %Le "
-				 "to: %Le sum: %Le arg: %p\n",
-			 dump_from, dump_to, sum, arg));
+	DUMP_LOG(fprintf(stderr, "worker: from: %lg "
+		 "to: %lg sum: %lg arg: %p\n",
+		 (double) dump_from, (double) dump_to, (double) sum, arg));
 
 	return NULL;
 }

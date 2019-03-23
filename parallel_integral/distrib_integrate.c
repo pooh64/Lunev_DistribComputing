@@ -18,9 +18,9 @@ int process_args(int argc, char *argv[], int *mode)
 		return -1;
 	}
 	if (tmp == 0)
-		fprintf(stderr, "Starting as worker\n");
+		fprintf(stderr, "argv = worker\n");
 	else
-		fprintf(stderr, "Starting as starter\n");
+		fprintf(stderr, "argv = starter\n");
 	
 	*mode = tmp;
 	
@@ -32,8 +32,6 @@ int main(int argc, char *argv[])
 	int mode;
 	if (process_args(argc, argv, &mode))
 		exit(EXIT_FAILURE);
-
-	printf("aaaaa\n");
 	
 	if (mode == 0)
 		integrate_network_worker(NULL);
