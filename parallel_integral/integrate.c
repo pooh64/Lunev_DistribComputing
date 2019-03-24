@@ -29,7 +29,6 @@ struct task_container {
 	size_t start_step;
 	size_t n_steps;
 	
-	pthread_t thread;
 	int cpu;
 };
 
@@ -42,17 +41,17 @@ struct task_container_align {
 void *integrate_task_worker(void *arg)
 {
 	struct task_container *pack = arg;
-	worker_tmp_t base      = pack->base;
-	worker_tmp_t step_wdth = pack->step_wdth;
-	size_t       n_steps   = pack->n_steps;
-	size_t       cur_step  = pack->start_step;
-	worker_tmp_t sum = 0;
+	register worker_tmp_t base      = pack->base;
+	register worker_tmp_t step_wdth = pack->step_wdth;
+		 size_t       n_steps   = pack->n_steps;
+	register size_t       cur_step  = pack->start_step;
+	register worker_tmp_t sum = 0;
 
 	DUMP_LOG(worker_tmp_t dump_from = base + cur_step * step_wdth);
 	DUMP_LOG(worker_tmp_t dump_to   = base + (cur_step + pack->n_steps) * 
 		 		       	  step_wdth);
 
-	for (size_t i = n_steps; i != 0; i--, cur_step++)
+	for (register size_t i = n_steps; i != 0; i--, cur_step++)
 		sum += (INTEGRATE_FUNC(base + cur_step * step_wdth)) * step_wdth;
 
 	pack->accum = sum;
@@ -114,7 +113,8 @@ int set_this_thread_cpu(int cpu)
 	return 0;
 }
 
-int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
+int integrate_run_tasks(struct task_container_align *tasks,
+	pthread_t *threads, int n_tasks)
 {
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
@@ -131,7 +131,7 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 			perror("Error: pthread_attr_setaffinity_np");
 			return -1;
 		}
-		ret = pthread_create(&ptr->thread, &attr,
+		ret = pthread_create(&threads[i], &attr,
 			integrate_task_worker, ptr);
 		if (ret) {
 			perror("Error: pthread_create");
@@ -142,12 +142,10 @@ int integrate_run_tasks(struct task_container_align *tasks, int n_tasks)
 	return 0;
 }
 
-int integrate_join_tasks(struct task_container_align *tasks, int n_tasks)
+int integrate_join_tasks(pthread_t *threads, int n_threads)
 {
-	for (int i = 0; i < n_tasks; i++) {
-		struct task_container *ptr = &tasks[i].task;
-		int ret = pthread_join(ptr->thread, NULL);
-		if (ret) {
+	for (; n_threads != 0; n_threads--, threads++) {
+		if (pthread_join(*threads, NULL)) {
 			perror("Error: pthread_join");
 			return -1;
 		}
@@ -177,9 +175,12 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 		CPU_CLR(tasks[i].task.cpu, result);
 }
 
+#if 0
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
+	assert(!"outdated\n");
+
 	int n_threads = CPU_COUNT(cpuset);
 
 	/* Allocate cache-aligned task containers */
@@ -218,8 +219,9 @@ handle_err:
 	free(tasks);
 	return -1;
 }
+#endif
 
-/* Baaaad */
+/* Baaaad, fighting with TurboBoost */
 int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
@@ -231,7 +233,7 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 		return -1;
 	}
 	
-	/* Prepare bad tasks */
+	/* The same with overloading threads */
 	int n_bad_threads = 0;
 	struct task_container_align *bad_tasks;
 	if (CPU_COUNT(cpuset) > n_threads) {
@@ -240,8 +242,22 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 			sizeof(*bad_tasks) * n_bad_threads);
 		if (!bad_tasks) {
 			perror("Error: aligned_alloc");
-			free(tasks);
-			return -1;
+			goto handle_err_1;
+		}
+	}
+
+	pthread_t *threads = malloc(sizeof(*threads) * n_threads);
+	if (!threads) {
+		perror("Error: malloc");
+		goto handle_err_2;
+	}
+
+	pthread_t *bad_threads;
+	if (n_bad_threads) {
+		bad_threads = malloc(sizeof(*bad_threads) * n_bad_threads);
+		if (!bad_threads) {
+			perror("Error: malloc");
+			goto handle_err_3;
 		}
 	}
 
@@ -260,38 +276,48 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	
 	/* Move main thread to other cpu */
 	if (set_this_thread_cpu(tasks[0].task.cpu))
-		goto handle_err;
+		goto handle_err_4;
 	
 	/* Run bad tasks */
-	if (n_bad_threads && integrate_run_tasks(bad_tasks, n_bad_threads))
-		goto handle_err;
+	if (n_bad_threads && integrate_run_tasks(bad_tasks,
+	    bad_threads, n_bad_threads))
+		goto handle_err_4;
 	
 	/* Run non-main tasks */
-	if (integrate_run_tasks(tasks + 1, n_threads - 1))
-		goto handle_err;
+	if (integrate_run_tasks(tasks + 1, threads + 1, n_threads - 1))
+		goto handle_err_4;
 
 	/* Run main task */
 	integrate_task_worker(&tasks[0].task);
 	
 	/* Finish bad tasks */
-	if (n_bad_threads && integrate_join_tasks(bad_tasks, n_bad_threads))
-		goto handle_err;
+	if (n_bad_threads && integrate_join_tasks(bad_threads, n_bad_threads))
+		goto handle_err_4;
 	
 	/* Finish non-main tasks */
-	if (integrate_join_tasks(tasks + 1, n_threads - 1))
-		goto handle_err;
+	if (integrate_join_tasks(threads + 1, n_threads - 1))
+		goto handle_err_4;
 	
 	/* Sumary */
 	*result = integrate_accumulate_result(tasks, n_threads);
 
-	if (n_bad_threads)
+	if (n_bad_threads) {
 		free(bad_tasks);
+		free(bad_threads);
+	}
 	free(tasks);
+	free(threads);
 	return 0;
 
-handle_err:
+handle_err_4:
+	if (n_bad_threads)
+		free(bad_threads);
+handle_err_3:
+	free(threads);
+handle_err_2:
 	if (n_bad_threads)
 		free(bad_tasks);
+handle_err_1:
 	free(tasks);
 	return -1;
 }

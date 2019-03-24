@@ -1,7 +1,7 @@
 #ifndef INTEGRATE_H_
 #define INTEGRATE_H_
 
-#define ENABLE_DUMP_LOG
+ #define ENABLE_DUMP_LOG
 
 #ifdef ENABLE_DUMP_LOG
 #define DUMP_LOG(arg) arg
