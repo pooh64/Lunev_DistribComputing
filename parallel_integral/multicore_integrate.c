@@ -39,12 +39,12 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	get_full_cpuset(&topo, &cpuset);
-	DUMP_LOG(dump_cpu_topology(stderr, &topo));
-	DUMP_LOG(dump_cpu_set(stderr, &cpuset));
+	DUMP_LOG_DO(dump_cpu_topology(stderr, &topo));
+	DUMP_LOG_DO(dump_cpu_set(stderr, &cpuset));
 
-	long double from = 0;
-	long double to = 50000;
-	long double step = 1 / to;
+	long double from = INTEGRATE_FROM;
+	long double to   = INTEGRATE_TO;
+	long double step = INTEGRATE_STEP;
 	long double result;
 	size_t n_steps = (to - from) / step;
 
@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
 	}
 
 	printf("result : %.*Lg\n", LDBL_DIG, result);
-	// printf("+1/xmax: %.*Lg\n", LDBL_DIG, result + 1 / to);
+	printf("+1/to: %.*Lg\n", LDBL_DIG, result + 1 / to);
 
 	return 0;
 }

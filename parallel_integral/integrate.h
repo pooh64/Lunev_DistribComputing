@@ -1,25 +1,28 @@
 #ifndef INTEGRATE_H_
 #define INTEGRATE_H_
 
-#define ENABLE_DUMP_LOG
-
 /* Tired looking for error, 128 is enough here */
 #define CACHE_LINE_ALIGN 1024
-
-/* Switching to long double makes 3x faster calculations, but some L1 bounds */
 typedef double worker_tmp_t;
 
-/* #define INTEGRATE_FUNC(x) (2 / (x * x + 1)) */
-#define INTEGRATE_FUNC(x) (x)
+#define INTEGRATE_FUNC(x) (2 / ((x) * (x) + 1))
+// #define INTEGRATE_FUNC(x) ((x) * (x))
+#define INTEGRATE_FROM 0.
+#define INTEGRATE_TO   20000.
+#define INTEGRATE_STEP 1 / (INTEGRATE_TO - INTEGRATE_FROM)
 
-#define INTEGRATE_UDP_PORT 4010
-#define INTEGRATE_TCP_PORT 4011
+#define INTEGRATE_UDP_PORT  4010
+#define INTEGRATE_TCP_PORT  4011
+#define INTEGRATE_UDP_MAGIC 0xdead
 
+// #define ENABLE_DUMP_LOG
 
-#ifdef ENABLE_DUMP_LOG
-#define DUMP_LOG(arg) arg
+#ifdef  ENABLE_DUMP_LOG
+#define DUMP_LOG(...) (fprintf(stderr, __VA_ARGS__))
+#define DUMP_LOG_DO(arg) arg
 #else
-#define DUMP_LOG(arg)
+#define DUMP_LOG(...)
+#define DUMP_LOG_DO(arg)
 #endif
 
 #include "cpu_topology.h"

@@ -18,9 +18,9 @@ int process_args(int argc, char *argv[], int *mode)
 		return -1;
 	}
 	if (tmp == 0)
-		fprintf(stderr, "argv = worker\n");
+		DUMP_LOG("argv = worker\n");
 	else
-		fprintf(stderr, "argv = starter\n");
+		DUMP_LOG("argv = starter\n");
 	
 	*mode = tmp;
 	

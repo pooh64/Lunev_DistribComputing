@@ -47,18 +47,20 @@ void *integrate_task_worker(void *arg)
 	register size_t       cur_step  = pack->start_step;
 	register worker_tmp_t sum = 0;
 
-	DUMP_LOG(worker_tmp_t dump_from = base + cur_step * step_wdth);
-	DUMP_LOG(worker_tmp_t dump_to   = base + (cur_step + pack->n_steps) * 
-		 		       	  step_wdth);
+	DUMP_LOG_DO(worker_tmp_t dump_from = base + cur_step * step_wdth);
+	DUMP_LOG_DO(worker_tmp_t dump_to   = base + (cur_step + pack->n_steps) *
+					     step_wdth);
 
-	for (register size_t i = n_steps; i != 0; i--, cur_step++)
-		sum += (INTEGRATE_FUNC(base + cur_step * step_wdth)) * step_wdth;
+	for (register size_t i = n_steps; i != 0; i--, cur_step++) {
+		register worker_tmp_t x = base + cur_step * step_wdth;
+		sum += INTEGRATE_FUNC(x) * step_wdth;
+	}
 
 	pack->accum = sum;
 
-	DUMP_LOG(fprintf(stderr, "worker: from: %lg "
+	DUMP_LOG("worker: from: %lg "
 		 "to: %lg sum: %lg arg: %p\n",
-		 (double) dump_from, (double) dump_to, (double) sum, arg));
+		 (double) dump_from, (double) dump_to, (double) sum, arg);
 
 	return NULL;
 }
@@ -104,7 +106,7 @@ int set_this_thread_cpu(int cpu)
 	cpu_set_t cpuset_tmp;
 	CPU_ZERO(&cpuset_tmp);
 	CPU_SET(cpu, &cpuset_tmp);
-	DUMP_LOG(fprintf(stderr, "setting main   to cpu = %2d\n", cpu)); 
+	DUMP_LOG("setting main   to cpu = %2d\n", cpu); 
 	if (sched_setaffinity(getpid(), 
 	    sizeof(cpuset_tmp), &cpuset_tmp) == -1) {
 		perror("Error: sched_setaffinity");
@@ -123,8 +125,8 @@ int integrate_run_tasks(struct task_container_align *tasks,
 		struct task_container *ptr = &tasks[i].task;
 		CPU_ZERO(&cpuset_tmp);
 		CPU_SET(ptr->cpu, &cpuset_tmp);
-		DUMP_LOG(fprintf(stderr, "setting worker to cpu = %2d\n",
-				 ptr->cpu));
+		DUMP_LOG("setting worker to cpu = %2d\n",
+				 ptr->cpu);
 		int ret = pthread_attr_setaffinity_np(&attr,
 			sizeof(cpuset_tmp), &cpuset_tmp);
 		if (ret) {
@@ -175,7 +177,7 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 		CPU_CLR(tasks[i].task.cpu, result);
 }
 
-#if 0
+
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
@@ -188,7 +190,13 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
 	if (!tasks) {
 		perror("Error: aligned_alloc");
-		return -1;
+		goto handle_err_0;
+	}
+	
+	pthread_t *threads = malloc(sizeof(*threads) * n_threads);
+	if (!threads) {
+		perror("Error: malloc");
+		goto handle_err_1;
 	}
 
 	/* Split task btw cpus and threads */
@@ -196,18 +204,18 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	
 	/* Move main thread to other cpu */
 	if (set_this_thread_cpu(tasks[0].task.cpu))
-		goto handle_err;
+		goto handle_err_2;
 	
 	/* Run non-main tasks */
-	if (integrate_run_tasks(tasks + 1, n_threads - 1))
-		goto handle_err;
+	if (integrate_run_tasks(tasks + 1, threads + 1, n_threads - 1))
+		goto handle_err_2;
 
 	/* Run main task */
 	integrate_task_worker(&tasks[0].task);
 	
 	/* Finish non-main tasks */
-	if (integrate_join_tasks(tasks + 1, n_threads - 1))
-		goto handle_err;
+	if (integrate_join_tasks(threads + 1, n_threads - 1))
+		goto handle_err_2;
 	
 	/* Sumary */
 	*result = integrate_accumulate_result(tasks, n_threads);
@@ -215,11 +223,13 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	free(tasks);
 	return 0;
 
-handle_err:
+handle_err_2:
+	free(threads);
+handle_err_1:
 	free(tasks);
+handle_err_0:
 	return -1;
 }
-#endif
 
 /* Baaaad, fighting with TurboBoost */
 int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
@@ -230,7 +240,7 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
 	if (!tasks) {
 		perror("Error: aligned_alloc");
-		return -1;
+		goto handle_err_0;
 	}
 	
 	/* The same with overloading threads */
@@ -319,13 +329,14 @@ handle_err_2:
 		free(bad_tasks);
 handle_err_1:
 	free(tasks);
+handle_err_0:
 	return -1;
 }
 
 
 int integrate_network_worker(cpu_set_t *cpuset)
 {
-	DUMP_LOG(fprintf(stderr, "Starting worker\n"));
+	DUMP_LOG("Starting worker\n");
 	
 	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
 	if (sk_udp == -1) {
@@ -355,18 +366,18 @@ int integrate_network_worker(cpu_set_t *cpuset)
 	while (1) {
 		int udp_msg;
 		socklen_t addr_len;
-		DUMP_LOG(fprintf(stderr, "Waiting for udp_msg\n"));
+		DUMP_LOG("Waiting for udp_msg\n");
 		ret = recvfrom(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, &addr_len);
 		if (ret == -1) {
 			perror("Error: recvfrom");
 			return -1;
 		}
-		DUMP_LOG(fprintf(stderr, "Received udp_msg: %d\n", udp_msg));
+		DUMP_LOG("Received udp_msg: %d\n", udp_msg);
 		
 		// check msg
 		// receive task (tcp)
 		// do
-		// send result	
+		// send result
 	}
 	
 	return 0;
@@ -376,7 +387,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 int integrate_network_starter(size_t n_steps, long double base,
 	long double step, long double *result)
 {
-	DUMP_LOG(fprintf(stderr, "Starting starter\n"));
+	DUMP_LOG("Starting starter\n");
 	
 	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
 	if (sk_udp == -1) {
@@ -398,7 +409,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
 	
 	int udp_msg = 1234;
-	DUMP_LOG(fprintf(stderr, "Sending udp_msg: %d\n", udp_msg));
+	DUMP_LOG("Sending udp_msg: %d\n", udp_msg);
 	ret = sendto(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, sizeof(addr));
 	if (ret == -1) {
 		perror("Error: sendto");
