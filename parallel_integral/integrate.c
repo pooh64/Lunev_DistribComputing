@@ -338,46 +338,61 @@ int integrate_network_worker(cpu_set_t *cpuset)
 {
 	DUMP_LOG("Starting worker\n");
 	
-	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
-	if (sk_udp == -1) {
+	struct sockaddr_in addr;
+	socklen_t addr_len;
+	ssize_t ret;
+	
+	/* Prepare UDP socket */
+	
+	int udp_sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (udp_sock == -1) {
 		perror("Error: socket");
 		return -1;
 	}
 	
 	int val = 1;
-	ssize_t ret;
 	
-	ret = setsockopt(sk_udp, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+	ret = setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
 	if (ret == -1) {
 		perror("Error: setsockopt");
 		return -1;
 	}
 	
-	struct sockaddr_in addr;
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(INTEGRATE_UDP_PORT);
-	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
+	addr.sin_family      = AF_INET;
+	addr.sin_port        = htons(INTEGRATE_UDP_PORT);
+	addr.sin_addr.s_addr = INADDR_BROADCAST;
 	
-	if (bind(sk_udp, &addr, sizeof(addr))) {
+	if (bind(udp_sock, &addr, sizeof(addr))) {
 		perror("Error: bind");
 		return -1;
 	}
 	
+	/* Process requests */
+	
 	while (1) {
-		int udp_msg;
-		socklen_t addr_len;
+		/* Wait for broadcast */
+	
 		DUMP_LOG("Waiting for udp_msg\n");
-		ret = recvfrom(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, &addr_len);
+		int udp_msg;
+		addr_len = sizeof(addr);
+		
+		ret = recvfrom(udp_sock, &udp_msg, sizeof(udp_msg), 0, &addr, &addr_len);
 		if (ret == -1) {
 			perror("Error: recvfrom");
 			return -1;
 		}
-		DUMP_LOG("Received udp_msg: %d\n", udp_msg);
 		
-		// check msg
-		// receive task (tcp)
-		// do
-		// send result
+		DUMP_LOG("Received udp_msg: %d\n", udp_msg);
+		if (udp_msg != INTEGRATE_UDP_MAGIC) {
+			DUMP_LOG("Not equal to INTEGRATE_UDP_MAGIC\n");
+			continue;
+		}
+		
+		/* Connect to starter */
+		
+		/* Receive task */
+		
+		/* Send result */
 	}
 	
 	return 0;
@@ -389,39 +404,14 @@ int integrate_network_starter(size_t n_steps, long double base,
 {
 	DUMP_LOG("Starting starter\n");
 	
-	int sk_udp = socket(PF_INET, SOCK_DGRAM, 0);
-	if (sk_udp == -1) {
-		perror("Error: socket");
-		return -1;
-	}
-	
-	int val = 1;
-	ssize_t ret;
-	ret = setsockopt(sk_udp, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
-	if (ret == -1) {
-		perror("Error: setsockopt");
-		return -1;
-	}
-	
 	struct sockaddr_in addr;
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(INTEGRATE_UDP_PORT);
-	addr.sin_addr.s_addr = INADDR_BROADCAST;	// Broadcast/any?, htons?
+	socklen_t addr_len;
+	ssize_t ret;
 	
-	int udp_msg = 1234;
-	DUMP_LOG("Sending udp_msg: %d\n", udp_msg);
-	ret = sendto(sk_udp, &udp_msg, sizeof(udp_msg), 0, &addr, sizeof(addr));
-	if (ret == -1) {
-		perror("Error: sendto");
-		return -1;
-	}
+	/* Prepare TCP socket */
 	
-	close(sk_udp);
-	
-	/////
-	
-	int sk_tcp = socket(PF_INET, SOCK_STREAM, 0);
-	if (sk_tcp == -1) {
+	int tcp_sock = socket(PF_INET, SOCK_STREAM, 0);
+	if (tcp_sock == -1) {
 		perror("Error: socket");
 		return -1;
 	}
@@ -429,9 +419,56 @@ int integrate_network_starter(size_t n_steps, long double base,
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(INTEGRATE_TCP_PORT);
 	addr.sin_addr.s_addr = INADDR_ANY;
+	
+	if (bind(tcp_sock, &addr, sizeof(addr))) {
+		perror("Error: bind");
+		return -1;
+	}
+	
+	if (listen(tcp_sock, INTEGRATE_MAX_WORKERS)) {
+		perror("Error: listen");
+		return -1;
+	}
 
-	// send task (tcp)
-	// wait for results (with timeout)
+	/* UDP Broadcast */
+	
+	int udp_sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (udp_sock == -1) {
+		perror("Error: socket");
+		return -1;
+	}
+	
+	int val = 1;
+	ret = setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
+	if (ret == -1) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	DUMP_LOG("Broadcasting udp_msg to workers");
+	addr.sin_family      = AF_INET;
+	addr.sin_port        = htons(INTEGRATE_UDP_PORT);
+	addr.sin_addr.s_addr = INADDR_BROADCAST;
+	int udp_msg = INTEGRATE_UDP_MAGIC;
+	
+	ret = sendto(udp_sock, &udp_msg, sizeof(udp_msg), 0, &addr, sizeof(addr));
+	if (ret == -1) {
+		perror("Error: sendto");
+		return -1;
+	}
+	
+	close(udp_sock);			/// CHECK
+	
+	/* Accept TCP connections */
+	
+	int worker_sock[INTEGRATE_MAX_WORKERS];
+	int n_workers = 0;
+	
+	/* Split task */
+	
+	/* Send requests */
+	
+	/* Accumulate result */
 	
 	return 0;
 }

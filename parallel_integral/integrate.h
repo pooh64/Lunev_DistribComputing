@@ -14,6 +14,7 @@ typedef double worker_tmp_t;
 #define INTEGRATE_UDP_PORT  4010
 #define INTEGRATE_TCP_PORT  4011
 #define INTEGRATE_UDP_MAGIC 0xdead
+#define INTEGRATE_MAX_WORKERS 255
 
 // #define ENABLE_DUMP_LOG
 
