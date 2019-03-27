@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
 		
 		int ret = integrate_network_worker(&cpuset);
 		if (ret == -1) {
-			fprintf(stderr, "Error: worker failed");
+			fprintf(stderr, "Error: worker failed\n");
 			exit(EXIT_FAILURE);
 		} if (ret == 1) {
 			// maybe run it again?
