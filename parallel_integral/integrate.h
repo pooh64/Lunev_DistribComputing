@@ -16,7 +16,7 @@ typedef double worker_tmp_t;
 #define INTEGRATE_UDP_MAGIC 0xdead
 #define INTEGRATE_MAX_WORKERS 255
 
-// #define ENABLE_DUMP_LOG
+#define ENABLE_DUMP_LOG
 
 #ifdef  ENABLE_DUMP_LOG
 #define DUMP_LOG(...) (fprintf(stderr, __VA_ARGS__))

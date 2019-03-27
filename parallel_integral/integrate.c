@@ -421,7 +421,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 		
 		ret = connect(tcp_sock, &addr, sizeof(addr));
 		if (ret < 0 && errno == EINPROGRESS) {
-			DUMP_LOG("Connecting to starter...");
+			DUMP_LOG("Connecting to starter...\n");
 			struct timeval timeout;
 			timeout.tv_sec = 1; 	// Define that
 			timeout.tv_usec = 0;
@@ -451,7 +451,12 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			return -1;
 		}
 		
-		DUMP_LOG("Successfully connected");
+		DUMP_LOG("Successfully connected\n");
+		
+		if (fcntl(tcp_sock, F_SETFL, 0) < 0) {
+			perror("Error: fcntl");
+			return -1;
+		}
 		
 		/* Receive task */
 		
@@ -591,7 +596,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 		ret = select(tcp_sock + 1, &set, NULL, NULL, &timeout);
 		if (ret == 0) {
 			DUMP_LOG("Accept timed out\n");
-			continue;
+			return -1;
 		}
 		if (ret < 0) {
 			perror("Error: select");
