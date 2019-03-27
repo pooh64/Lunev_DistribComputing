@@ -475,6 +475,7 @@ int worker_tcp_connect(struct sockaddr_in *addr, struct timeval *timeout)
 	}
 		
 	DUMP_LOG("Successfully connected\n");
+	DUMP_LOG("\t(%ld usec remaining)\n", timeout->tv_usec);
 	
 	if (fcntl(tcp_sock, F_SETFL, 0) < 0) {
 		perror("Error: fcntl");
@@ -557,7 +558,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			goto handle_err_2;
 		}
 		
-		DUMP_LOG("Result sent, request done\n");
+		DUMP_LOG("-------- Result sent, request done --------\n");
 		close(tcp_sock);
 	}
 	
@@ -658,6 +659,7 @@ int starter_accept_connections(int tcp_sock, int *sockets, int max_sockets, stru
 			goto handle_err;
 		}
 		DUMP_LOG("Accepted connection №%d\n", n_workers);
+		DUMP_LOG("\t(%ld usec remaining)\n", timeout->tv_usec);
 		ret = accept(tcp_sock, NULL, NULL);
 		if (ret == -1) {
 			perror("Error: accept");
@@ -712,15 +714,15 @@ int starter_accumulate_result(int *sockets, int n_sockets, long double *result)
 {
 	long double accum = 0;
 	
-	for (int i = n_sockets; i != 0; i--) {
+	for (; n_sockets != 0; n_sockets--) {
 		long double sum;
 		DUMP_LOG("Receiving sum...\n");
-		if (netw_tcp_read(sockets[i - 1], &sum, sizeof(sum)) < 0) {
-			fprintf(stderr, "Error: connection with worker[%d] lost\n", i - 1);
+		if (netw_tcp_read(sockets[n_sockets - 1], &sum, sizeof(sum)) < 0) {
+			fprintf(stderr, "Error: connection with worker[%d] lost\n", n_sockets - 1);
 			return -1;
 		}
 		
-		DUMP_LOG("worker[%d] sum = %Lg\n", i, sum);
+		DUMP_LOG("worker[%d] sum = %Lg\n", n_sockets - 1, sum);
 		accum += sum;
 	}
 	

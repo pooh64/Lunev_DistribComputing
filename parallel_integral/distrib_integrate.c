@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
+#include <float.h>
 
 int process_args(int argc, char *argv[], int *mode)
 {
@@ -69,7 +70,8 @@ int main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 		
-		printf("result: %Lg\n", result);
+		printf("result: %.*Lg\n", LDBL_DIG, result);
+		printf("+1/to : %.*Lg\n", LDBL_DIG, result + 1 / to);
 	}
 		
 	return 0;

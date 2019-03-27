@@ -54,8 +54,8 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	printf("result : %.*Lg\n", LDBL_DIG, result);
-	printf("+1/to: %.*Lg\n", LDBL_DIG, result + 1 / to);
+	printf("result: %.*Lg\n", LDBL_DIG, result);
+	printf("+1/to : %.*Lg\n", LDBL_DIG, result + 1 / to);
 
 	return 0;
 }
