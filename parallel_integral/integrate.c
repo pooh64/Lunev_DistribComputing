@@ -12,11 +12,13 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <sched.h>
 #include <limits.h>
+#include <signal.h>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -181,7 +183,7 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
-	assert(!"outdated\n");
+	assert(!"not tested");
 
 	int n_threads = CPU_COUNT(cpuset);
 
@@ -334,15 +336,26 @@ handle_err_0:
 }
 
 
+struct task_netw {
+	long double base;
+	long double step_wdth;
+	size_t start_step;
+	size_t n_steps;
+};
+
 int integrate_network_worker(cpu_set_t *cpuset)
 {
+	/* Set SIGPIPE here */
+
 	DUMP_LOG("Starting worker\n");
+	
+	/* Prepare UDP socket */
 	
 	struct sockaddr_in addr;
 	socklen_t addr_len;
 	ssize_t ret;
-	
-	/* Prepare UDP socket */
+	int val;
+	socklen_t val_len;
 	
 	int udp_sock = socket(PF_INET, SOCK_DGRAM, 0);
 	if (udp_sock == -1) {
@@ -350,8 +363,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 		return -1;
 	}
 	
-	int val = 1;
-	
+	val = 1;
 	ret = setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
 	if (ret == -1) {
 		perror("Error: setsockopt");
@@ -390,9 +402,97 @@ int integrate_network_worker(cpu_set_t *cpuset)
 		
 		/* Connect to starter */
 		
+		addr.sin_port = htons(INTEGRATE_TCP_PORT);
+		
+		int tcp_sock = socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+		if (tcp_sock == -1) {
+			perror("Error: socket");
+			return -1;
+		}
+		
+		fd_set set;
+		FD_ZERO(&set);
+		FD_SET(tcp_sock, &set);
+		
+		ret = connect(tcp_sock, &addr, sizeof(addr));
+		if (ret < 0 && errno == EINPROGRESS) {
+			DUMP_LOG("Connecting to starter...");
+			struct timeval timeout;
+			timeout.tv_sec = 1; 	// Define that
+			timeout.tv_usec = 0;
+			ret = select(tcp_sock + 1, NULL, &set, NULL, &timeout);
+			if (ret == 0) {
+				fprintf(stderr, "Error: connection timed out");
+				return 1;	// Note this
+			}
+			if (ret < 0) {
+				perror("Error: select");
+				return -1;
+			}
+			
+			val_len = sizeof(val);
+			ret = getsockopt(tcp_sock, SOL_SOCKET, SO_ERROR, &val, &val_len);
+			if (ret == -1) {
+				perror("Error: getsockopt");
+				return -1;
+			}
+			if (val != 0) {
+				errno = val;
+				perror("Error: connection failed");
+				return -1;
+			}
+		} else if (ret < 0) {
+			perror("Error: connect");
+			return -1;
+		}
+		
+		DUMP_LOG("Successfully connected");
+		
 		/* Receive task */
 		
+		struct task_netw task;
+		
+		ret = read(tcp_sock, &task, sizeof(task));
+		if (ret < 0) {
+			perror("Error: read");
+			return -1;
+		}
+		if (ret != sizeof(task)) {
+			assert(!"Nonfull read");
+		}
+		
+		/* Process task */
+		
+		DUMP_LOG("task:\n\tfrom = %Lg\n\tto = %Lg\n\tstep = %Lg\n",
+			 task.base + task.step_wdth * task.start_step,
+			 task.base + task.step_wdth * (task.start_step + task.n_steps),
+			 task.step_wdth);
+		
+		long double result;
+		
+		if (integrate_multicore(cpuset,
+			task.n_steps, task.base, task.step_wdth, &result) == -1) {
+			perror("Error: integrate");
+			return -1;
+		}
+		
 		/* Send result */
+		
+		DUMP_LOG("Result: %Lg, sending...\n", result);
+		
+		ret = write(tcp_sock, &result, sizeof(result));	 // SIGPIPE
+		if (ret < 0) {
+			if (errno == EPIPE)
+				perror("Error: write, connection lost");
+			else
+				perror("Error: write");
+			return -1;
+		}
+		if (ret != sizeof(result)) {
+			assert(!"Nonfull write");
+		}
+		
+		DUMP_LOG("Result sent, request done\n");
 	}
 	
 	return 0;
@@ -402,13 +502,17 @@ int integrate_network_worker(cpu_set_t *cpuset)
 int integrate_network_starter(size_t n_steps, long double base,
 	long double step, long double *result)
 {
+	/* Set SIGPIPE here */
+
+
 	DUMP_LOG("Starting starter\n");
+	
+	/* Prepare TCP socket */
 	
 	struct sockaddr_in addr;
 	socklen_t addr_len;
 	ssize_t ret;
-	
-	/* Prepare TCP socket */
+	int val;
 	
 	int tcp_sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (tcp_sock == -1) {
@@ -438,7 +542,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 		return -1;
 	}
 	
-	int val = 1;
+	val = 1;
 	ret = setsockopt(udp_sock, SOL_SOCKET, SO_BROADCAST, &val, sizeof(val));
 	if (ret == -1) {
 		perror("Error: setsockopt");
@@ -457,18 +561,97 @@ int integrate_network_starter(size_t n_steps, long double base,
 		return -1;
 	}
 	
-	close(udp_sock);			/// CHECK
+	// close(udp_sock);
 	
 	/* Accept TCP connections */
 	
 	int worker_sock[INTEGRATE_MAX_WORKERS];
 	int n_workers = 0;
 	
-	/* Split task */
+	fd_set set;
+	FD_ZERO(&set);
+	FD_SET(tcp_sock, &set);
+	struct timeval timeout;
+	timeout.tv_sec = 1; // Define that
+	timeout.tv_usec = 0;
 	
-	/* Send requests */
+	while (1) {
+		/* Unportable, Linux-only */
+		ret = select(tcp_sock + 1, &set, NULL, NULL, &timeout);
+		if (ret == 0) {
+			DUMP_LOG("Accept timed out\n");
+			continue;
+		}
+		if (ret < 0) {
+			perror("Error: select");
+			return -1;
+		}
+		DUMP_LOG("Accepted connection n%d\n", n_workers);
+		ret = accept(tcp_sock, &addr, &addr_len);
+		if (ret == -1) {
+			perror("Error: accept");
+			return -1;
+		}
+		worker_sock[n_workers++] = ret;
+	}
+	
+	if (!n_workers) {
+		DUMP_LOG("No workers aviable");
+		return 1; // Note this
+	}
+	
+	/* Split task and send requests */
+	struct task_netw task;
+	task.base = base;
+	task.step_wdth = step;
+	size_t cur_step = 0;
+	
+	for (int i = n_workers; i != 0; i--) {
+		task.start_step = cur_step;
+		task.n_steps = n_steps / n_workers;
+		cur_step += task.n_steps;
+		n_steps -= task.n_steps;
+		
+		DUMP_LOG("Sending task to worker[%d]\n", i);
+		
+		ret = write(worker_sock[i], &task, sizeof(task));  // SIGPIPE 
+		if (!ret) {
+			if (errno == EPIPE)
+				fprintf(stderr, "Error: connection to worker[%d] lost (EPIPE)\n", i);
+			else
+				perror("Error: write");
+			return -1;
+		}
+		if (ret != sizeof(task)) {
+			assert(!"Nonfull write");
+		}
+	}
 	
 	/* Accumulate result */
+	long double accum = 0;
+	
+	for (int i = n_workers; i != 0; i--) {
+		long double sum;
+		DUMP_LOG("Receiving sum...\n");
+		ret = read(worker_sock[i], &sum, sizeof(sum));
+		if (ret == 0) {
+			perror("Error: connection to worker lost");
+			return -1;
+		}
+		if (ret == -1) {
+			perror("Error: read");
+			return -1;
+		}
+		if (ret != sizeof(sum)) {
+			assert(!"Nonfull read");
+		}
+		
+		DUMP_LOG("Received sum = %Lg\n", sum);
+		
+		accum += sum;
+	}
+	
+	*result = accum;
 	
 	return 0;
 }

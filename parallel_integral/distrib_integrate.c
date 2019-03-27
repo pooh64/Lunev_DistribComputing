@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <assert.h>
 
 int process_args(int argc, char *argv[], int *mode)
 {
@@ -33,10 +34,47 @@ int main(int argc, char *argv[])
 	if (process_args(argc, argv, &mode))
 		exit(EXIT_FAILURE);
 	
-	if (mode == 0)
-		integrate_network_worker(NULL);
-	else
-		integrate_network_starter(0, 0, 0, NULL);
+	if (mode == 0) {
+		/* Prepare usable cpuset */
+	
+		struct cpu_topology topo;
+		cpu_set_t cpuset;
+		if (get_cpu_topology(&topo)) {
+			fprintf(stderr, "Error: get_cpu_topology\n");
+			exit(EXIT_FAILURE);
+		}
+		get_full_cpuset(&topo, &cpuset);
+		DUMP_LOG_DO(dump_cpu_topology(stderr, &topo));
+		DUMP_LOG_DO(dump_cpu_set(stderr, &cpuset));	
+		
+		int ret = integrate_network_worker(&cpuset);
+		if (ret == -1) {
+			fprintf(stderr, "Error: worker failed");
+			exit(EXIT_FAILURE);
+		} if (ret == 1) {
+			// maybe run it again?
+			assert(0);
+		}
+	}
+	else {
+		long double from = INTEGRATE_FROM;
+		long double to   = INTEGRATE_TO;
+		long double step = INTEGRATE_STEP;
+		long double result;
+		size_t n_steps = (to - from) / step;
+		
+		int ret = integrate_network_starter(n_steps, from, step, &result);
+		if (ret == -1) {
+			fprintf(stderr, "Error: starter failed\n");
+			exit(EXIT_FAILURE);
+		}
+		if (ret == 1) {
+			fprintf(stderr, "Error: no workers found\n");
+			exit(EXIT_FAILURE);
+		}
+		
+		printf("result: %Lg\n", result);
+	}
 		
 	return 0;
 }
