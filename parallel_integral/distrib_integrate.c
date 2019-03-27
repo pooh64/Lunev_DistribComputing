@@ -48,13 +48,10 @@ int main(int argc, char *argv[])
 		DUMP_LOG_DO(dump_cpu_topology(stderr, &topo));
 		DUMP_LOG_DO(dump_cpu_set(stderr, &cpuset));	
 		
-		int ret = integrate_network_worker(&cpuset);
-		if (ret == -1) {
-			fprintf(stderr, "Error: worker failed\n");
-			exit(EXIT_FAILURE);
-		} if (ret == 1) {
-			// maybe run it again?
-			assert(0);
+		while (1) {
+			int ret = integrate_network_worker(&cpuset);
+			if (ret == -1)
+				fprintf(stderr, "Error: worker failed, restarting...\n");
 		}
 	}
 	else {

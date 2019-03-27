@@ -391,6 +391,12 @@ int worker_udp_prepare_socket(in_port_t port)
 		goto handle_err_1;
 	}
 	
+	val = 1;
+	if (setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
+		perror("Error: setsockopt");
+		goto handle_err_1;
+	}
+	
 	struct sockaddr_in addr;
 	addr.sin_family      = AF_INET;
 	addr.sin_port        = port;
@@ -492,7 +498,7 @@ handle_err_0:
 
 int integrate_network_worker(cpu_set_t *cpuset)
 {
-	fprintf(stderr, "Starting worker\n");
+	fprintf(stderr, "-------- Starting worker --------\n");
 
 	/* Set SIGPIPE here */
 	struct sigaction act = { };
@@ -572,7 +578,9 @@ handle_err_0:
 	return -1;
 }
 
+
 /********************** Network Starter *************************/
+
 
 int starter_tcp_listen_socket(in_port_t port, int max_listen)
 {	
@@ -580,6 +588,12 @@ int starter_tcp_listen_socket(in_port_t port, int max_listen)
 	if (tcp_sock == -1) {
 		perror("Error: socket");
 		goto handle_err_0;
+	}
+	
+	int val = 1;
+	if (setsockopt(tcp_sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) < 0) {
+		perror("Error: setsockopt");
+		goto handle_err_1;
 	}
 	
 	struct sockaddr_in addr;
