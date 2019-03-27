@@ -424,8 +424,8 @@ int worker_wait_udp_msg(int udp_sock, int udp_msg, struct sockaddr_in *src)
 		DUMP_LOG("Received: %d\n", received);
 		if (received != udp_msg) {
 			DUMP_LOG("Not equal to %d\n", udp_msg);
-			continue;
-		}
+		} else
+			break;
 	}
 	
 	return 0;
