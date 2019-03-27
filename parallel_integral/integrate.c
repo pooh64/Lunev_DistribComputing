@@ -635,12 +635,15 @@ int integrate_network_starter(size_t n_steps, long double base,
 		DUMP_LOG("Sending task to worker[%d]\n", i);
 		
 		ret = write(worker_sock[i], &task, sizeof(task));  // SIGPIPE 
-		if (!ret) {
+		if (ret < 0) {
 			if (errno == EPIPE)
 				fprintf(stderr, "Error: connection to worker[%d] lost (EPIPE)\n", i);
 			else
 				perror("Error: write");
 			return -1;
+		}
+		if (ret == 0) {
+			aseert(!"Null write");
 		}
 		if (ret != sizeof(task)) {
 			assert(!"Nonfull write");
