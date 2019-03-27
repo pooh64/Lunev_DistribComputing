@@ -643,7 +643,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 			return -1;
 		}
 		if (ret == 0) {
-			aseert(!"Null write");
+			assert(!"Null write");
 		}
 		if (ret != sizeof(task)) {
 			assert(!"Nonfull write");
