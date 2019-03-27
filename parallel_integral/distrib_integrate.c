@@ -68,10 +68,6 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "Error: starter failed\n");
 			exit(EXIT_FAILURE);
 		}
-		if (ret == 1) {
-			fprintf(stderr, "Error: no workers found\n");
-			exit(EXIT_FAILURE);
-		}
 		
 		printf("result: %Lg\n", result);
 	}
