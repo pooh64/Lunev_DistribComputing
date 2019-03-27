@@ -183,8 +183,6 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
-	assert(!"not tested");
-
 	int n_threads = CPU_COUNT(cpuset);
 
 	/* Allocate cache-aligned task containers */
@@ -345,9 +343,16 @@ struct task_netw {
 
 int integrate_network_worker(cpu_set_t *cpuset)
 {
-	/* Set SIGPIPE here */
-
 	DUMP_LOG("Starting worker\n");
+
+	/* Set SIGPIPE here */
+	
+	struct sigaction act = { };
+	act.sa_handler = SIG_IGN;
+	if (sigaction(SIGPIPE, &act, NULL) < 0) {
+		perror("Error: sigaction");
+		return -1;
+	}
 	
 	/* Prepare UDP socket */
 	
@@ -501,18 +506,24 @@ int integrate_network_worker(cpu_set_t *cpuset)
 
 int integrate_network_starter(size_t n_steps, long double base,
 	long double step, long double *result)
-{
-	/* Set SIGPIPE here */
-
-
+{	
 	DUMP_LOG("Starting starter\n");
+	
+	/* Set SIGPIPE here */
+	
+	struct sigaction act = { };
+	act.sa_handler = SIG_IGN;
+	if (sigaction(SIGPIPE, &act, NULL) < 0) {
+		perror("Error: sigaction");
+		return -1;
+	}
 	
 	/* Prepare TCP socket */
 	
 	struct sockaddr_in addr;
 	socklen_t addr_len;
-	ssize_t ret;
 	int val;
+	ssize_t ret;
 	
 	int tcp_sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (tcp_sock == -1) {
