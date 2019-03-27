@@ -569,7 +569,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 		return -1;
 	}
 	
-	DUMP_LOG("Broadcasting udp_msg to workers");
+	DUMP_LOG("Broadcasting udp_msg to workers\n");
 	addr.sin_family      = AF_INET;
 	addr.sin_port        = htons(INTEGRATE_UDP_PORT);
 	addr.sin_addr.s_addr = INADDR_BROADCAST;
