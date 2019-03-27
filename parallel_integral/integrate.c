@@ -343,7 +343,7 @@ struct task_netw {
 
 int integrate_network_worker(cpu_set_t *cpuset)
 {
-	DUMP_LOG("Starting worker\n");
+	fprintf(stderr, "Starting worker\n");
 
 	/* Set SIGPIPE here */
 	
@@ -507,7 +507,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 int integrate_network_starter(size_t n_steps, long double base,
 	long double step, long double *result)
 {	
-	DUMP_LOG("Starting starter\n");
+	fprintf(stderr, "Starting starter\n");
 	
 	/* Set SIGPIPE here */
 	
