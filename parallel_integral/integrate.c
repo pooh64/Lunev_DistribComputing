@@ -543,7 +543,8 @@ int integrate_network_worker(cpu_set_t *cpuset)
 		long double result;
 		
 		if (integrate_multicore(cpuset,
-			task.n_steps, task.base, task.step_wdth, &result) < 0) {
+			task.n_steps, task.base + task.step_wdth * task.start_step,
+			task.step_wdth, &result) < 0) {
 			perror("Error: integrate");
 			goto handle_err_2;
 		}
@@ -557,6 +558,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 		}
 		
 		DUMP_LOG("Result sent, request done\n");
+		close(tcp_sock);
 	}
 	
 	return 0;
