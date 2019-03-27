@@ -626,7 +626,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	task.step_wdth = step;
 	size_t cur_step = 0;
 	
-	for (int i = n_workers; i != 0; i--) {
+	for (int i = n_workers - 1; i != 0; i--) {
 		task.start_step = cur_step;
 		task.n_steps = n_steps / n_workers;
 		cur_step += task.n_steps;
@@ -653,7 +653,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	/* Accumulate result */
 	long double accum = 0;
 	
-	for (int i = n_workers; i != 0; i--) {
+	for (int i = n_workers - 1; i != 0; i--) {
 		long double sum;
 		DUMP_LOG("Receiving sum...\n");
 		ret = read(worker_sock[i], &sum, sizeof(sum));
