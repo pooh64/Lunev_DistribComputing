@@ -467,6 +467,10 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			perror("Error: read");
 			return -1;
 		}
+		if (ret == 0) {
+			fprintf(stderr, "Error: connection lost\n");
+			return -1;
+		}
 		if (ret != sizeof(task)) {
 			assert(!"Nonfull read");
 		}
@@ -596,7 +600,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 		ret = select(tcp_sock + 1, &set, NULL, NULL, &timeout);
 		if (ret == 0) {
 			DUMP_LOG("Accept timed out\n");
-			return -1;
+			break;
 		}
 		if (ret < 0) {
 			perror("Error: select");
