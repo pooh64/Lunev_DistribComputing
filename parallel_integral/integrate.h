@@ -13,13 +13,14 @@ typedef double worker_tmp_t;
 
 #define INTEGRATE_UDP_PORT  4020
 #define INTEGRATE_TCP_PORT  4021
+#define INTEGRATE_NETW_TIMEOUT_USEC 500 * 1000
 #define INTEGRATE_UDP_MAGIC 0xdead
 #define INTEGRATE_MAX_WORKERS 255
 
 #define ENABLE_DUMP_LOG
 
 #ifdef  ENABLE_DUMP_LOG
-#define DUMP_LOG(...) (fprintf(stderr, __VA_ARGS__))
+#define DUMP_LOG(...) (fprintf(stderr, "DUMP_LOG: " __VA_ARGS__))
 #define DUMP_LOG_DO(arg) arg
 #else
 #define DUMP_LOG(...)
