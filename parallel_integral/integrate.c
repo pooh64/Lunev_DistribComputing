@@ -599,14 +599,14 @@ int integrate_network_starter(size_t n_steps, long double base,
 		/* Unportable, Linux-only */
 		ret = select(tcp_sock + 1, &set, NULL, NULL, &timeout);
 		if (ret == 0) {
-			DUMP_LOG("Accept timed out\n");
+			DUMP_LOG("Accept timed out, %d workers accepted\n", n_workers);
 			break;
 		}
 		if (ret < 0) {
 			perror("Error: select");
 			return -1;
 		}
-		DUMP_LOG("Accepted connection n%d\n", n_workers);
+		DUMP_LOG("Accepted connection №%d\n", n_workers);
 		ret = accept(tcp_sock, &addr, &addr_len);
 		if (ret == -1) {
 			perror("Error: accept");
@@ -616,7 +616,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	}
 	
 	if (!n_workers) {
-		DUMP_LOG("No workers aviable");
+		DUMP_LOG("No workers aviable\n");
 		return 1; // Note this
 	}
 	
@@ -626,7 +626,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	task.step_wdth = step;
 	size_t cur_step = 0;
 	
-	for (int i = n_workers - 1; i != 0; i--) {
+	for (int i = n_workers; i != 0; i--) {
 		task.start_step = cur_step;
 		task.n_steps = n_steps / n_workers;
 		cur_step += task.n_steps;
@@ -634,7 +634,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 		
 		DUMP_LOG("Sending task to worker[%d]\n", i);
 		
-		ret = write(worker_sock[i], &task, sizeof(task));  // SIGPIPE 
+		ret = write(worker_sock[i - 1], &task, sizeof(task));  // SIGPIPE 
 		if (ret < 0) {
 			if (errno == EPIPE)
 				fprintf(stderr, "Error: connection to worker[%d] lost (EPIPE)\n", i);
@@ -653,10 +653,10 @@ int integrate_network_starter(size_t n_steps, long double base,
 	/* Accumulate result */
 	long double accum = 0;
 	
-	for (int i = n_workers - 1; i != 0; i--) {
+	for (int i = n_workers; i != 0; i--) {
 		long double sum;
 		DUMP_LOG("Receiving sum...\n");
-		ret = read(worker_sock[i], &sum, sizeof(sum));
+		ret = read(worker_sock[i - 1], &sum, sizeof(sum));
 		if (ret == 0) {
 			perror("Error: connection to worker lost");
 			return -1;
