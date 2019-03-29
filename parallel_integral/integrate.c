@@ -21,6 +21,7 @@
 #include <signal.h>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 
 struct task_container {
@@ -377,6 +378,36 @@ ssize_t netw_tcp_write(int sock, void *buf, size_t buf_s)
 	return ret;
 }
 
+int netw_socket_keepalive(int sock)
+{
+	int yes = 1;
+	int idle = 1;
+	int interval = 1;
+	int maxpkt = 1;
+	
+	if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(int)) < 0) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(int)) < 0) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(int)) < 0) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &maxpkt, sizeof(int)) < 0) {
+		perror("Error: setsockopt");
+		return -1;
+	}
+	
+	return 0;
+}
+
 int worker_udp_prepare_socket(in_port_t port)
 {
 	int udp_sock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -444,7 +475,12 @@ int worker_tcp_connect(struct sockaddr_in *addr, struct timeval *timeout)
 		perror("Error: socket");
 		goto handle_err_0;
 	}
-		
+	
+	if (netw_socket_keepalive(tcp_sock) < 0) {
+		fprintf(stderr, "Error: netw_socket_keepalive");
+		goto handle_err_1;
+	}
+	
 	fd_set set;
 	FD_ZERO(&set);
 	FD_SET(tcp_sock, &set);
@@ -496,9 +532,9 @@ handle_err_0:
 	return -1;
 }
 
-int integrate_network_worker(cpu_set_t *cpuset)
+int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 {
-	fprintf(stderr, "-------- Starting worker --------\n");
+	fprintf(stderr, "-------- Starting worker (%d threads) --------\n", n_threads);
 
 	/* Set SIGPIPE here */
 	struct sigaction act = { };
@@ -535,6 +571,14 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			goto handle_err_1;
 		}
 		
+		/* Send ncpus */
+		DUMP_LOG("n_threads: %d, sending...\n", n_threads);
+		
+		if (netw_tcp_write(tcp_sock, &n_threads, sizeof(n_threads)) < 0) {
+			fprintf(stderr, "Error: write n_threads to starter\n");
+			goto handle_err_2;
+		}
+		
 		/* Receive task */
 		struct task_netw task;
 		if (netw_tcp_read(tcp_sock, &task, sizeof(task)) < 0) {
@@ -549,7 +593,7 @@ int integrate_network_worker(cpu_set_t *cpuset)
 			 task.step_wdth);
 		long double result;
 		
-		if (integrate_multicore(cpuset,
+		if (integrate_multicore_abused(n_threads, cpuset,
 			task.n_steps, task.base + task.step_wdth * task.start_step,
 			task.step_wdth, &result) < 0) {
 			perror("Error: integrate");
@@ -672,14 +716,21 @@ int starter_accept_connections(int tcp_sock, int *sockets, int max_sockets, stru
 			perror("Error: select");
 			goto handle_err;
 		}
-		DUMP_LOG("Accepted connection №%d\n", n_workers);
-		DUMP_LOG("\t(%ld usec remaining)\n", timeout->tv_usec);
+		
 		ret = accept(tcp_sock, NULL, NULL);
 		if (ret == -1) {
 			perror("Error: accept");
 			goto handle_err;
 		}
 		sockets[n_workers++] = ret;
+		
+		DUMP_LOG("Accepted connection №%d\n", n_workers);
+		DUMP_LOG("\t(%ld usec remaining)\n", timeout->tv_usec);
+		
+		if (netw_socket_keepalive(tcp_sock) < 0) {
+			fprintf(stderr, "Error: netw_socket_keepalive");
+			goto handle_err;
+		}
 	}
 	
 	return n_workers;
@@ -691,8 +742,12 @@ handle_err:
 	return -1; 
 }
 
-int starter_send_tasks(int *sockets, int n_sockets, struct task_netw *full_task)
+int starter_send_tasks(int *sockets, int *cpus, int n_sockets, struct task_netw *full_task)
 {
+	int sum_cpus = 0;
+	for (int i = 0; i < n_sockets; i++) 
+		sum_cpus += cpus[i];
+
 	struct task_netw task;
 	task.base	= full_task->base;
 	task.step_wdth  = full_task->step_wdth;
@@ -700,10 +755,13 @@ int starter_send_tasks(int *sockets, int n_sockets, struct task_netw *full_task)
 	size_t n_steps  = full_task->n_steps;
 	
 	for (; n_sockets != 0; n_sockets--) {
+	
 		task.start_step = cur_step;
-		task.n_steps    = n_steps / n_sockets;
+		task.n_steps    = (n_steps * cpus[n_sockets - 1]) / sum_cpus;
+		
 		cur_step       += task.n_steps;
 		n_steps        -= task.n_steps;
+		sum_cpus       -= cpus[n_sockets - 1];
 		
 		DUMP_LOG("Sending task to worker[%d]\n", n_sockets - 1);
 		
@@ -726,11 +784,10 @@ int starter_send_tasks(int *sockets, int n_sockets, struct task_netw *full_task)
 
 int starter_accumulate_result(int *sockets, int n_sockets, long double *result)
 {
+	DUMP_LOG("Receiving sum...\n");
 	long double accum = 0;
-	
 	for (; n_sockets != 0; n_sockets--) {
 		long double sum;
-		DUMP_LOG("Receiving sum...\n");
 		if (netw_tcp_read(sockets[n_sockets - 1], &sum, sizeof(sum)) < 0) {
 			fprintf(stderr, "Error: connection with worker[%d] lost\n", n_sockets - 1);
 			return -1;
@@ -741,6 +798,21 @@ int starter_accumulate_result(int *sockets, int n_sockets, long double *result)
 	}
 	
 	*result = accum;
+	return 0;
+}
+
+int starter_get_workers_ncpus(int *sockets, int *ncpu, int n_sockets)
+{
+	DUMP_LOG("Receiving ncpus...\n");
+	for (; n_sockets != 0; n_sockets--) {
+		if (netw_tcp_read(sockets[n_sockets - 1], &ncpu[n_sockets - 1], sizeof(*ncpu)) < 0) {
+			fprintf(stderr, "Error: connection with worker[%d] lost\n", n_sockets - 1);
+			return -1;
+		}
+		
+		DUMP_LOG("worker[%d] ncpus = %d\n", n_sockets - 1, ncpu[n_sockets - 1]);
+	}
+	
 	return 0;
 }
 
@@ -787,6 +859,14 @@ int integrate_network_starter(size_t n_steps, long double base,
 		goto handle_err_1;
 	}
 	
+	/* Get numbers of cpus */
+	int worker_ncpu[INTEGRATE_MAX_WORKERS];
+	
+	if (starter_get_workers_ncpus(worker_sock, worker_ncpu, n_workers) < 0) {
+		fprintf(stderr, "Error: starter_get_workers_ncpus failed\n");
+		goto handle_err_2;
+	}
+	
 	/* Split task and send requests */
 	struct task_netw task;
 	task.base = base;
@@ -794,7 +874,7 @@ int integrate_network_starter(size_t n_steps, long double base,
 	task.start_step = 0;
 	task.n_steps = n_steps;
 	
-	if (starter_send_tasks(worker_sock, n_workers, &task) < 0) {
+	if (starter_send_tasks(worker_sock, worker_ncpu, n_workers, &task) < 0) {
 		fprintf(stderr, "Error: starter_send_tasks failed\n");
 		goto handle_err_2;
 	}

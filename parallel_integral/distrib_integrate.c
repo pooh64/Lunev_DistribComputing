@@ -5,10 +5,10 @@
 #include <assert.h>
 #include <float.h>
 
-int process_args(int argc, char *argv[], int *mode)
+int process_args(int argc, char *argv[], int *mode, int *n_threads)
 {
-	if (argc != 2) {
-		fprintf(stderr, "Error: one arg required\n");
+	if (argc < 2 || argc > 3) {
+		fprintf(stderr, "Error: wrong argv\n");
 		return -1;
 	}
 	
@@ -19,20 +19,30 @@ int process_args(int argc, char *argv[], int *mode)
 		fprintf(stderr, "Error: wrong mode\n");
 		return -1;
 	}
-	if (tmp == 0)
-		DUMP_LOG("argv = worker\n");
-	else
-		DUMP_LOG("argv = starter\n");
-	
 	*mode = tmp;
+	
+	if (tmp == 1) {
+		DUMP_LOG("argv = starter\n");
+		return 0;
+	}
+	
+	DUMP_LOG("argv = worker\n");
+	errno = 0;
+	tmp = strtol(argv[2], &endptr, 10);
+	if (errno || *endptr != '\0' || tmp < 1) {
+		fprintf(stderr, "Error: wrong n_threads\n");
+		return -1;
+	}
+	
+	*n_threads = tmp;
 	
 	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	int mode;
-	if (process_args(argc, argv, &mode))
+	int mode, n_threads;
+	if (process_args(argc, argv, &mode, &n_threads))
 		exit(EXIT_FAILURE);
 	
 	if (mode == 0) {
@@ -49,7 +59,7 @@ int main(int argc, char *argv[])
 		DUMP_LOG_DO(dump_cpu_set(stderr, &cpuset));	
 		
 		while (1) {
-			int ret = integrate_network_worker(&cpuset);
+			int ret = integrate_network_worker(n_threads, &cpuset);
 			if (ret == -1)
 				fprintf(stderr, "Error: worker failed, restarting...\n");
 		}
