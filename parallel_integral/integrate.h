@@ -2,11 +2,10 @@
 #define INTEGRATE_H_
 
 /* Tired looking for error, 128 is enough here */
-#define CACHE_LINE_ALIGN 1024
+#define CACHE_LINE_ALIGN 256
 typedef double worker_tmp_t;
 
 #define INTEGRATE_FUNC(x) (2 / ((x) * (x) + 1))
-// #define INTEGRATE_FUNC(x) ((x) * (x))
 #define INTEGRATE_FROM 0.
 #define INTEGRATE_TO   150000.
 #define INTEGRATE_STEP 1 / (INTEGRATE_TO - INTEGRATE_FROM)
@@ -32,10 +31,13 @@ typedef double worker_tmp_t;
 
 #define TRACE_LINE (fprintf(stderr, "line: %d\n", __LINE__))
 
+
+/* Use full cpuset */
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result);
 
-int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+/* Use thrash-threads to get const cpufreq */
+int integrate_multicore_scalable(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result);
 
 

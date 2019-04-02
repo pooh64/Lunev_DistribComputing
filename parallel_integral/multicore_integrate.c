@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
 	long double result;
 	size_t n_steps = (to - from) / step;
 
-	if (integrate_multicore_abused(n_threads, &cpuset,
+	if (integrate_multicore_scalable(n_threads, &cpuset,
 		n_steps, from, step, &result) == -1) {
 		perror("Error: integrate");
 		exit(EXIT_FAILURE);

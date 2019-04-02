@@ -197,7 +197,11 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
-	assert(!"Outdated");
+	if (setjmp(sig_exc_buf)) {
+		fprintf(stderr, "Error: signal-exception caught\n");
+		goto handle_err;
+	}
+
 	int n_threads = CPU_COUNT(cpuset);
 
 	/* Allocate cache-aligned task containers */
@@ -205,13 +209,13 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
 	if (!tasks) {
 		perror("Error: aligned_alloc");
-		goto handle_err_0;
+		goto handle_err;
 	}
 	
 	pthread_t *threads = malloc(sizeof(*threads) * n_threads);
 	if (!threads) {
 		perror("Error: malloc");
-		goto handle_err_1;
+		goto handle_err;
 	}
 
 	/* Split task btw cpus and threads */
@@ -219,18 +223,18 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	
 	/* Move main thread to other cpu */
 	if (set_this_thread_cpu(tasks[0].task.cpu))
-		goto handle_err_2;
+		goto handle_err;
 	
 	/* Run non-main tasks */
 	if (integrate_run_tasks(tasks + 1, threads + 1, n_threads - 1))
-		goto handle_err_2;
+		goto handle_err;
 
 	/* Run main task */
 	integrate_task_worker(&tasks[0].task);
 	
 	/* Finish non-main tasks */
 	if (integrate_join_tasks(threads + 1, n_threads - 1))
-		goto handle_err_2;
+		goto handle_err;
 	
 	/* Sumary */
 	*result = integrate_accumulate_result(tasks, n_threads);
@@ -238,16 +242,19 @@ int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	free(tasks);
 	return 0;
 
-handle_err_2:
-	free(threads);
-handle_err_1:
-	free(tasks);
-handle_err_0:
+handle_err:
+	if (threads) {
+		integrate_cancel_tasks(threads + 1, n_threads - 1);
+		free(threads);
+	}
+
+	if (tasks)
+		free(tasks);
 	return -1;
 }
 
 /* Baaaad, fighting with TurboBoost */
-int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
+int integrate_multicore_scalable(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
 	if (setjmp(sig_exc_buf)) {
@@ -532,7 +539,7 @@ int worker_tcp_connect(struct sockaddr_in *addr, struct timeval *timeout)
 		DUMP_LOG("Connecting to starter...\n");
 		ret = select(tcp_sock + 1, NULL, &set, NULL, timeout);
 		if (ret == 0) {
-			fprintf(stderr, "Error: connect timed out");
+			fprintf(stderr, "Error: connect timed out\n");
 			close(tcp_sock);
 			return 1;	// Note this
 		}
@@ -661,10 +668,10 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 			 task.step_wdth);
 		long double result;
 		
-		if (integrate_multicore_abused(n_threads, cpuset,
+		if (integrate_multicore_scalable(n_threads, cpuset,
 			task.n_steps, task.base + task.step_wdth * task.start_step,
 			task.step_wdth, &result) < 0) {
-			perror("Error: integrate");
+			fprintf(stderr, "Error: integrate failed\n");
 			goto handle_err_2;
 		}
 
