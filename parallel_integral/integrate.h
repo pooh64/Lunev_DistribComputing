@@ -8,7 +8,7 @@ typedef double worker_tmp_t;
 #define INTEGRATE_FUNC(x) (2 / ((x) * (x) + 1))
 // #define INTEGRATE_FUNC(x) ((x) * (x))
 #define INTEGRATE_FROM 0.
-#define INTEGRATE_TO   50000.
+#define INTEGRATE_TO   150000.
 #define INTEGRATE_STEP 1 / (INTEGRATE_TO - INTEGRATE_FROM)
 
 #define INTEGRATE_UDP_PORT  4020
