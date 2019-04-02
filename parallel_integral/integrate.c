@@ -342,12 +342,12 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 
 handle_err:
 	if (bad_threads) {
-		integrate_join_tasks(bad_threads, n_bad_threads);
+		integrate_cancel_tasks(bad_threads, n_bad_threads);
 		free(bad_threads);
 	}
 
 	if (threads) {
-		integrate_join_tasks(threads + 1, n_threads - 1);
+		integrate_cancel_tasks(threads + 1, n_threads - 1);
 		free(threads);
 	}
 
@@ -400,7 +400,7 @@ ssize_t netw_tcp_read(int sock, void *buf, size_t buf_s)
 		fprintf(stderr, "Error: read returned EOF\n");
 		return -1;
 	}
-	if (ret != buf_s) {  // Is it correct?
+	if (ret != buf_s) {
 		fprintf(stderr, "Error: nonfull read\n");
 		return -1;
 	}
@@ -414,7 +414,7 @@ ssize_t netw_tcp_write(int sock, void *buf, size_t buf_s)
 		perror("Error: write");
 		return -1;
 	}
-	if (ret != buf_s) {  // Is it correct?
+	if (ret != buf_s) {
 		fprintf(stderr, "Error: nonfull write\n");
 		return -1;
 	}
@@ -780,7 +780,7 @@ int starter_accept_connections(int tcp_sock, int *sockets, int max_sockets, stru
 	
 	int n_workers = 0;
 	
-	while (n_workers < max_sockets) {
+	for (; n_workers < max_sockets; n_workers++) {
 		/* Unportable, Linux-only */
 		int ret = select(tcp_sock + 1, &set, NULL, NULL, timeout);
 		if (ret == 0) {
@@ -797,12 +797,12 @@ int starter_accept_connections(int tcp_sock, int *sockets, int max_sockets, stru
 			perror("Error: accept");
 			goto handle_err;
 		}
-		sockets[n_workers++] = ret;
+		sockets[n_workers] = ret;
 		
-		DUMP_LOG("Accepted connection №%d\n", n_workers);
+		DUMP_LOG("Accepted connection №%d\n", n_workers + 1);
 		DUMP_LOG("\t(%ld usec remaining)\n", timeout->tv_usec);
 		
-		if (netw_socket_keepalive(tcp_sock) < 0) {
+		if (netw_socket_keepalive(sockets[n_workers]) < 0) {
 			fprintf(stderr, "Error: netw_socket_keepalive");
 			goto handle_err;
 		}
