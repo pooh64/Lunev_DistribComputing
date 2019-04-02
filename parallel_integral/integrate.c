@@ -374,15 +374,10 @@ int netw_sigio_handler_socket = -1;
 void netw_sigio_handler(int sig)
 {
 	DUMP_LOG("Signal caught: %d\n", sig);
+
 	if (netw_sigio_handler_socket < 0)
-		return;
+	       return;	
 
-	char testbuf = 0;
-
-	if (!write(netw_sigio_handler_socket, &testbuf, 0))
-		return;
-
-	fprintf(stderr, "Error: connection test failed\n");
 	/* No more async */
 	fcntl(netw_sigio_handler_socket, F_SETFL, 0);
 	longjmp(sig_exc_buf, sig);
@@ -397,7 +392,7 @@ ssize_t netw_tcp_read(int sock, void *buf, size_t buf_s)
 		return -1;
 	}
 	if (ret == 0) {
-		fprintf(stderr, "Error: read returned EOF\n");
+		fprintf(stderr, "Error: connection lost\n");
 		return -1;
 	}
 	if (ret != buf_s) {
@@ -412,6 +407,10 @@ ssize_t netw_tcp_write(int sock, void *buf, size_t buf_s)
 	ssize_t ret = write(sock, buf, buf_s);
 	if (ret < 0) {
 		perror("Error: write");
+		return -1;
+	}
+	if (ret == 0) {
+		fprintf(stderr, "Error: connection lost\n");
 		return -1;
 	}
 	if (ret != buf_s) {
