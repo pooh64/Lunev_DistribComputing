@@ -19,10 +19,14 @@
 #include <sched.h>
 #include <limits.h>
 #include <signal.h>
+#include <setjmp.h>
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+
+/* Signal handler exception */
+jmp_buf sig_exc_buf;
 
 struct task_container {
 	long double base;
@@ -158,6 +162,15 @@ int integrate_join_tasks(pthread_t *threads, int n_threads)
 	return 0;
 }
 
+/* It's error-cleanup func, no err handler */
+int integrate_cancel_tasks(pthread_t *threads, int n_threads)
+{
+	for (; n_threads != 0; n_threads--, threads++)
+		pthread_cancel(*threads);
+	
+	return 0;
+}
+
 long double integrate_accumulate_result(struct task_container_align *tasks,
 	int n_tasks)
 {
@@ -184,6 +197,7 @@ void integrate_tasks_unused_cpus(struct task_container_align *tasks,
 int integrate_multicore(cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
+	assert(!"Outdated");
 	int n_threads = CPU_COUNT(cpuset);
 
 	/* Allocate cache-aligned task containers */
@@ -236,39 +250,45 @@ handle_err_0:
 int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	long double base, long double step, long double *result)
 {
+	if (setjmp(sig_exc_buf)) {
+		fprintf(stderr, "Error: signal-exception caught\n");
+		goto handle_err;
+	}
+
 	/* Allocate cache-aligned task containers */
-	struct task_container_align *tasks = 
-		aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
+	struct task_container_align *tasks = NULL;
+	tasks = aligned_alloc(sizeof(*tasks), sizeof(*tasks) * n_threads);
 	if (!tasks) {
 		perror("Error: aligned_alloc");
-		goto handle_err_0;
+		goto handle_err;
 	}
 	
 	/* The same with overloading threads */
 	int n_bad_threads = 0;
-	struct task_container_align *bad_tasks;
+	struct task_container_align *bad_tasks = NULL;
 	if (CPU_COUNT(cpuset) > n_threads) {
 		n_bad_threads = CPU_COUNT(cpuset) - n_threads;
 		bad_tasks = aligned_alloc(sizeof(*bad_tasks),
 			sizeof(*bad_tasks) * n_bad_threads);
 		if (!bad_tasks) {
 			perror("Error: aligned_alloc");
-			goto handle_err_1;
+			goto handle_err;
 		}
 	}
 
-	pthread_t *threads = malloc(sizeof(*threads) * n_threads);
+	pthread_t *threads = NULL;
+	threads = malloc(sizeof(*threads) * n_threads);
 	if (!threads) {
 		perror("Error: malloc");
-		goto handle_err_2;
+		goto handle_err;
 	}
 
-	pthread_t *bad_threads;
+	pthread_t *bad_threads = NULL;
 	if (n_bad_threads) {
 		bad_threads = malloc(sizeof(*bad_threads) * n_bad_threads);
 		if (!bad_threads) {
 			perror("Error: malloc");
-			goto handle_err_3;
+			goto handle_err;
 		}
 	}
 
@@ -287,27 +307,27 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	
 	/* Move main thread to other cpu */
 	if (set_this_thread_cpu(tasks[0].task.cpu))
-		goto handle_err_4;
+		goto handle_err;
 	
 	/* Run bad tasks */
 	if (n_bad_threads && integrate_run_tasks(bad_tasks,
 	    bad_threads, n_bad_threads))
-		goto handle_err_4;
+		goto handle_err;
 	
 	/* Run non-main tasks */
 	if (integrate_run_tasks(tasks + 1, threads + 1, n_threads - 1))
-		goto handle_err_4;
+		goto handle_err;
 
 	/* Run main task */
 	integrate_task_worker(&tasks[0].task);
 	
 	/* Finish bad tasks */
 	if (n_bad_threads && integrate_join_tasks(bad_threads, n_bad_threads))
-		goto handle_err_4;
+		goto handle_err;
 	
 	/* Finish non-main tasks */
 	if (integrate_join_tasks(threads + 1, n_threads - 1))
-		goto handle_err_4;
+		goto handle_err;
 	
 	/* Sumary */
 	*result = integrate_accumulate_result(tasks, n_threads);
@@ -320,17 +340,22 @@ int integrate_multicore_abused(int n_threads, cpu_set_t *cpuset, size_t n_steps,
 	free(threads);
 	return 0;
 
-handle_err_4:
-	if (n_bad_threads)
+handle_err:
+	if (bad_threads) {
+		integrate_join_tasks(bad_threads, n_bad_threads);
 		free(bad_threads);
-handle_err_3:
-	free(threads);
-handle_err_2:
-	if (n_bad_threads)
+	}
+
+	if (threads) {
+		integrate_join_tasks(threads + 1, n_threads - 1);
+		free(threads);
+	}
+
+	if (bad_tasks)
 		free(bad_tasks);
-handle_err_1:
-	free(tasks);
-handle_err_0:
+
+	if (tasks)
+		free(tasks);
 	return -1;
 }
 
@@ -344,6 +369,24 @@ struct task_netw {
 	size_t n_steps;
 };
 
+int netw_sigio_handler_socket = -1;
+
+void netw_sigio_handler(int sig)
+{
+	DUMP_LOG("Signal caught: %d\n", sig);
+	if (netw_sigio_handler_socket < 0)
+		return;
+
+	char testbuf = 0;
+
+	if (!write(netw_sigio_handler_socket, &testbuf, 0))
+		return;
+
+	fprintf(stderr, "Error: connection test failed\n");
+	/* No more async */
+	fcntl(netw_sigio_handler_socket, F_SETFL, 0);
+	longjmp(sig_exc_buf, sig);
+}
 
 /* Read and write same size blocks from TCP socket */
 ssize_t netw_tcp_read(int sock, void *buf, size_t buf_s)
@@ -390,17 +433,17 @@ int netw_socket_keepalive(int sock)
 		return -1;
 	}
 	
-	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(int)) < 0) {
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(int)) < 0) {
 		perror("Error: setsockopt");
 		return -1;
 	}
 	
-	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(int)) < 0) {
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPINTVL, &interval, sizeof(int)) < 0) {
 		perror("Error: setsockopt");
 		return -1;
 	}
 	
-	if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &maxpkt, sizeof(int)) < 0) {
+	if (setsockopt(sock, SOL_TCP, TCP_KEEPCNT, &maxpkt, sizeof(int)) < 0) {
 		perror("Error: setsockopt");
 		return -1;
 	}
@@ -523,6 +566,11 @@ int worker_tcp_connect(struct sockaddr_in *addr, struct timeval *timeout)
 		perror("Error: fcntl");
 		goto handle_err_1;
 	}
+
+	if (fcntl(tcp_sock, F_SETOWN, getpid()) < 0) {
+		perror("Error: fcntl");
+		goto handle_err_1;
+	}
 	
 	return tcp_sock;
 
@@ -540,6 +588,12 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 	struct sigaction act = { };
 	act.sa_handler = SIG_IGN;
 	if (sigaction(SIGPIPE, &act, NULL) < 0) {
+		perror("Error: sigaction");
+		goto handle_err_0;
+	}
+
+	act.sa_handler = netw_sigio_handler;
+	if (sigaction(SIGIO, &act, NULL) < 0) {
 		perror("Error: sigaction");
 		goto handle_err_0;
 	}
@@ -570,6 +624,19 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 		if (tcp_sock < 0) {
 			goto handle_err_1;
 		}
+
+		/* Prepare exception handler */
+		if (setjmp(sig_exc_buf)) {
+			fprintf(stderr, "Error: connection lost\n");
+			goto handle_err_2;
+		}
+
+		/* Enable async */
+		netw_sigio_handler_socket = tcp_sock;
+		if (fcntl(tcp_sock, F_SETFL, O_ASYNC) < 0) {
+			perror("Error: fcntl");
+			goto handle_err_2;
+		}
 		
 		/* Send ncpus */
 		DUMP_LOG("n_threads: %d, sending...\n", n_threads);
@@ -585,7 +652,9 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 			fprintf(stderr, "Error: read task from starter\n");
 			goto handle_err_2;
 		}
-		
+
+		/* *********************************** */
+
 		/* Process task */
 		DUMP_LOG("task:\n\tfrom = %Lg\n\tto = %Lg\n\tstep = %Lg\n",
 			 task.base + task.step_wdth * task.start_step,
@@ -597,6 +666,12 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 			task.n_steps, task.base + task.step_wdth * task.start_step,
 			task.step_wdth, &result) < 0) {
 			perror("Error: integrate");
+			goto handle_err_2;
+		}
+
+		/* Disable async */
+		if (fcntl(tcp_sock, F_SETFL, 0) < 0) {
+			perror("Error: fcntl");
 			goto handle_err_2;
 		}
 		
@@ -900,4 +975,3 @@ handle_err_1:
 handle_err_0:
 	return -1;
 }
-
