@@ -630,19 +630,6 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 		if (tcp_sock < 0) {
 			goto handle_err_1;
 		}
-
-		/* Prepare exception handler */
-		if (setjmp(sig_exc_buf)) {
-			fprintf(stderr, "Error: connection lost\n");
-			goto handle_err_2;
-		}
-
-		/* Enable async */
-		netw_sigio_handler_socket = tcp_sock;
-		if (fcntl(tcp_sock, F_SETFL, O_ASYNC) < 0) {
-			perror("Error: fcntl");
-			goto handle_err_2;
-		}
 		
 		/* Send ncpus */
 		DUMP_LOG("n_threads: %d, sending...\n", n_threads);
@@ -660,6 +647,19 @@ int integrate_network_worker(int n_threads, cpu_set_t *cpuset)
 		}
 
 		/* *********************************** */
+		
+		/* Prepare exception handler */
+		if (setjmp(sig_exc_buf)) {
+			fprintf(stderr, "Error: connection lost\n");
+			goto handle_err_2;
+		}
+
+		/* Enable async */
+		netw_sigio_handler_socket = tcp_sock;
+		if (fcntl(tcp_sock, F_SETFL, O_ASYNC) < 0) {
+			perror("Error: fcntl");
+			goto handle_err_2;
+		}
 
 		/* Process task */
 		DUMP_LOG("task:\n\tfrom = %Lg\n\tto = %Lg\n\tstep = %Lg\n",
@@ -812,6 +812,11 @@ int starter_accept_connections(int tcp_sock, int *sockets, int max_sockets, stru
 			fprintf(stderr, "Error: netw_socket_keepalive");
 			goto handle_err;
 		}
+		
+		if (fcntl(sockets[n_workers], F_SETOWN, getpid()) < 0) {
+			perror("Error: fcntl");
+			goto handle_err;
+		}
 	}
 	
 	return n_workers;
@@ -866,16 +871,41 @@ int starter_send_tasks(int *sockets, int *cpus, int n_sockets, struct task_netw 
 int starter_accumulate_result(int *sockets, int n_sockets, long double *result)
 {
 	DUMP_LOG("Receiving sum...\n");
+	
+	fd_set set;
+	fd_set tmp_set;
+	FD_ZERO(&set);
+	int max_fd = 0;
+	for (int i = 0; i < n_sockets; i++) {
+		if (sockets[i] > max_fd)
+			max_fd = sockets[i];
+		FD_SET(sockets[i], &set);
+	}
+	
 	long double accum = 0;
-	for (; n_sockets != 0; n_sockets--) {
-		long double sum;
-		if (netw_tcp_read(sockets[n_sockets - 1], &sum, sizeof(sum)) < 0) {
-			fprintf(stderr, "Error: connection with worker[%d] lost\n", n_sockets - 1);
+	while (n_sockets) {
+		
+		tmp_set = set;
+		int ret = select(max_fd + 1, &tmp_set, NULL, NULL, NULL);
+		if (ret < 0) {
+			perror("Error: select");
 			return -1;
 		}
 		
-		DUMP_LOG("worker[%d] sum = %Lg\n", n_sockets - 1, sum);
-		accum += sum;
+		for (int n = 0; ret; n++) {
+			if (FD_ISSET(sockets[n], &tmp_set)) {
+				long double sum;
+				if (netw_tcp_read(sockets[n], &sum, sizeof(sum)) < 0) {
+					fprintf(stderr, "Error: connection with worker[%d] lost\n", n_sockets - 1);
+					return -1;
+				}
+				DUMP_LOG("worker[%d] sum = %Lg\n", n, sum);
+				accum += sum;
+				ret--;
+				n_sockets--;
+				FD_CLR(sockets[n], &set);
+			}
+		}
 	}
 	
 	*result = accum;
