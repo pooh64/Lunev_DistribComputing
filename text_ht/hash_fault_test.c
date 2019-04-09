@@ -22,7 +22,6 @@ int hash_ctors_test()
 	return 0;
 }
 
-
 #define STRESS_WORD_S 8
 #define STRESS_WORD_N 64
 #define STRESS_CYCLES 1024
@@ -32,7 +31,7 @@ int hash_ctors_test()
 struct stress_word {
 	size_t cur_s;
 	size_t *data;
-	size_t  data_old;
+	size_t data_old;
 	char buf[STRESS_WORD_S];
 };
 
@@ -40,7 +39,7 @@ size_t rand_stress_word(char *buf, size_t buf_s)
 {
 	size_t rand_s = rand() % (buf_s - 1) + 1;
 	for (size_t tmp = rand_s; tmp != 0; tmp--, buf++)
-		*buf = (char) rand();
+		*buf = (char)rand();
 	*buf = '\0';
 	return rand_s;
 }
@@ -62,9 +61,8 @@ int hash_rand_stress_test()
 			assert(0);
 		}
 	}
-	
-	for (size_t cycle = STRESS_CYCLES; cycle != 0; --cycle) {
 
+	for (size_t cycle = STRESS_CYCLES; cycle != 0; --cycle) {
 		/* Generate new random words */
 		for (size_t i = 0; i != STRESS_WORD_N; ++i) {
 			words[i].cur_s =
@@ -73,8 +71,9 @@ int hash_rand_stress_test()
 
 		/* Insert new words in table, remember data values */
 		for (size_t i = 0; i != STRESS_WORD_N; ++i) {
-			int ret = hash_insert_data(ht,
-				words[i].buf, words[i].cur_s, &words[i].data);
+			int ret = hash_insert_data(ht, words[i].buf,
+						   words[i].cur_s,
+						   &words[i].data);
 			if (ret == -1) {
 				/* fprintf(stderr, "hash_insert_data failed\n"); */
 				words[i].data = NULL;
@@ -92,15 +91,15 @@ int hash_rand_stress_test()
 		for (size_t i = 0; i != STRESS_WORD_N; ++i) {
 			if (rand() % 2 || words[i].data == NULL)
 				continue;
-			int ret = hash_delete_data(ht,
-				words[i].buf, words[i].cur_s);
+			int ret = hash_delete_data(ht, words[i].buf,
+						   words[i].cur_s);
 			assert(ret == 1);
 			words[i].data = NULL;
-			ret = hash_search_data(ht,
-				words[i].buf, words[i].cur_s, &words[i].data);
+			ret = hash_search_data(ht, words[i].buf, words[i].cur_s,
+					       &words[i].data);
 			assert(ret == 0);
-			ret = hash_delete_data(ht,
-				words[i].buf, words[i].cur_s);
+			ret = hash_delete_data(ht, words[i].buf,
+					       words[i].cur_s);
 			assert(ret == 0);
 		}
 
@@ -108,8 +107,9 @@ int hash_rand_stress_test()
 		for (size_t i = 0; i != STRESS_WORD_N; ++i) {
 			if (!words[i].data)
 				continue;
-			int ret = hash_search_data(ht,
-				words[i].buf, words[i].cur_s, &words[i].data);
+			int ret = hash_search_data(ht, words[i].buf,
+						   words[i].cur_s,
+						   &words[i].data);
 			assert(ret == 1);
 			assert(*words[i].data == words[i].data_old);
 		}
@@ -124,11 +124,10 @@ int hash_rand_stress_test()
 	return 0;
 }
 
-
 int main()
 {
 	hash_ctors_test();
 	hash_rand_stress_test();
-	
+
 	return 0;
 }

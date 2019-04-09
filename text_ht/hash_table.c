@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 struct hash_entry {
-	char  *key;
+	char *key;
 	size_t key_s;
 	size_t data;
 	struct hash_entry *next;
@@ -23,7 +23,6 @@ struct hash_iter {
 	struct hash_entry *entry;
 	size_t index; /* Current bucket */
 };
-
 
 static struct hash_entry *_hash_entry_new(char *key, size_t key_s, size_t data)
 {
@@ -58,20 +57,19 @@ static inline uint32_t _hash_hashfunc(char *key, size_t key_s)
 	return hash;
 }
 
-static inline size_t 
-_hash_get_index(struct hash_table *ht, char *key, size_t key_s)
+static inline size_t _hash_get_index(struct hash_table *ht, char *key,
+				     size_t key_s)
 {
 	return _hash_hashfunc(key, key_s) % ht->arr_s;
 }
 
-static inline int _hash_cmp_keys(char *key_1, size_t key_1_s,
-				 char *key_2, size_t key_2_s)
+static inline int _hash_cmp_keys(char *key_1, size_t key_1_s, char *key_2,
+				 size_t key_2_s)
 {
 	if (key_1_s != key_2_s)
 		return 1;
 	return memcmp(key_1, key_2, key_1_s);
 }
-
 
 hash_table_t *hash_table_new(size_t n_buckets)
 {
@@ -218,7 +216,6 @@ void hash_table_dump_distrib(hash_table_t *ht, FILE *stream)
 	fprintf(stream, "---hash_table_dump_distrib/---\n");
 }
 
-
 hash_iter_t *hash_iter_new(hash_table_t *ht)
 {
 	struct hash_iter *iter = malloc(sizeof(*iter));
@@ -235,9 +232,8 @@ void hash_iter_delete(hash_iter_t *iter)
 	free(iter);
 }
 
-
 static inline int _hash_search_begin(struct hash_table *ht,
-		  struct hash_entry **entry, size_t *index)
+				     struct hash_entry **entry, size_t *index)
 {
 	for (size_t i = 0; i < ht->arr_s; i++) {
 		if (ht->arr[i]) {
@@ -251,7 +247,7 @@ static inline int _hash_search_begin(struct hash_table *ht,
 }
 
 static inline int _hash_search_next(struct hash_table *ht,
-		  struct hash_entry **entry, size_t *index)
+				    struct hash_entry **entry, size_t *index)
 {
 	if ((*entry)->next) {
 		*entry = (*entry)->next;
@@ -288,8 +284,8 @@ int hash_iter_data(hash_iter_t *iter, const char **key, size_t *key_s,
 	if (!iter->entry)
 		return -1;
 
-	if (key)	
-		*key  = iter->entry->key;
+	if (key)
+		*key = iter->entry->key;
 	if (key_s)
 		*key_s = iter->entry->key_s;
 	if (data_r)
@@ -313,4 +309,3 @@ int hash_foreach_data(hash_table_t *ht, hash_foreach_func_t *func, void *arg)
 
 	return 0;
 }
-

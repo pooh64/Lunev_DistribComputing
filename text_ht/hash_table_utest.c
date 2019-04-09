@@ -41,14 +41,14 @@ size_t rand_stress_word(char *buf, size_t buf_s)
 {
 	size_t rand_s = rand() % (buf_s - 1) + 1;
 	for (size_t tmp = rand_s; tmp != 0; tmp--, buf++)
-		*buf = (char) rand();
+		*buf = (char)rand();
 	*buf = '\0';
 	return rand_s;
 }
 
 int foreach_sum(const char *key, size_t key_s, size_t *data, void *arg)
 {
-	*(size_t*) arg += *data;
+	*(size_t *)arg += *data;
 	return 0;
 }
 
@@ -93,7 +93,7 @@ int hash_iter_test()
 		ret = hash_insert_data(ht, buf, sizeof(buf), &data);
 		assert(ret != -1);
 		if (!ret) {
-			*data = (size_t) rand();
+			*data = (size_t)rand();
 			checksum += *data;
 		}
 	}
@@ -107,9 +107,9 @@ int hash_iter_test()
 		assert(ret == 0);
 		sum += *data;
 	} while (hash_iter_next(iter));
-		
+
 	assert(sum == checksum);
-	
+
 	hash_iter_delete(iter);
 	hash_table_delete(ht);
 
@@ -132,7 +132,7 @@ int hash_foreach_test()
 		ret = hash_insert_data(ht, buf, sizeof(buf), &data);
 		assert(ret != -1);
 		if (!ret) {
-			*data = (size_t) rand();
+			*data = (size_t)rand();
 			checksum += *data;
 		}
 	}
@@ -146,7 +146,9 @@ int hash_foreach_test()
 	checksum += test_data;
 
 	/* Try to find test_word */
-	struct hash_item test_item = { .key = test_word, .key_s = sizeof(test_word), .data = NULL };
+	struct hash_item test_item = { .key = test_word,
+				       .key_s = sizeof(test_word),
+				       .data = NULL };
 	ret = hash_foreach_data(ht, &foreach_search, &test_item);
 	assert(ret == 1);
 	assert(*test_item.data == test_data);
@@ -161,7 +163,6 @@ int hash_foreach_test()
 
 	return 0;
 }
-
 
 int main()
 {

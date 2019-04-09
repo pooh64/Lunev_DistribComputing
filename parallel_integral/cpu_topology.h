@@ -21,14 +21,16 @@ struct cpu_topology {
 	int max_cpu_id;
 };
 
-int  get_cpu_topology(struct cpu_topology *topo);
+int get_cpu_topology(struct cpu_topology *topo);
 int dump_cpu_topology(FILE *stream, struct cpu_topology *topo);
 
+/* Set cores in cpuset, not used in project */
 int one_cpu_per_core_cpu_topology(struct cpu_topology *topo, cpu_set_t *cpuset);
 
 int dump_cpu_set(FILE *stream, cpu_set_t *cpuset);
 int cpu_set_search_next(int cpu, cpu_set_t *set);
 
+/* Convert topo to cpuset */
 void get_full_cpuset(struct cpu_topology *topo, cpu_set_t *set);
 
 #endif /* CPU_TOPOLOGY_H_ */

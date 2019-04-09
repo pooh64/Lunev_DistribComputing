@@ -20,11 +20,13 @@ void *__wrap_malloc(size_t size)
 		if (ret)
 			return ret;
 		fprintf(stderr, "__wrap_malloc: "
-				"__real_malloc failed!!!, exit\n"); 
+				"__real_malloc failed!!!, exit\n");
 		exit(EXIT_FAILURE);
 	}
-	FAULT_LOG(fprintf(stderr, "__wrap_malloc: size=%lu "
-			  "simulating failure\n", size));
+	FAULT_LOG(fprintf(stderr,
+			  "__wrap_malloc: size=%lu "
+			  "simulating failure\n",
+			  size));
 	return NULL;
 }
 
@@ -35,10 +37,12 @@ void *__wrap_calloc(size_t nmemb, size_t size)
 		if (ret)
 			return ret;
 		fprintf(stderr, "__wrap_calloc: "
-				"__real_calloc failed!!!, exit\n"); 
+				"__real_calloc failed!!!, exit\n");
 		exit(EXIT_FAILURE);
 	}
-	FAULT_LOG(fprintf(stderr, "__wrap_calloc: nmemb=%lu size=%lu "
-			  "simulating failure\n", nmemb, size));
+	FAULT_LOG(fprintf(stderr,
+			  "__wrap_calloc: nmemb=%lu size=%lu "
+			  "simulating failure\n",
+			  nmemb, size));
 	return NULL;
 }

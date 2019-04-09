@@ -11,7 +11,7 @@ int process_args(int argc, char *argv[], int *n_threads)
 		fprintf(stderr, "Error: only 1 arg required\n");
 		return -1;
 	}
-	
+
 	char *endptr;
 	errno = 0;
 	long tmp = strtol(argv[1], &endptr, 10);
@@ -20,7 +20,7 @@ int process_args(int argc, char *argv[], int *n_threads)
 		return -1;
 	}
 	*n_threads = tmp;
-	
+
 	return 0;
 }
 
@@ -43,13 +43,13 @@ int main(int argc, char *argv[])
 	DUMP_LOG_DO(dump_cpu_set(stderr, &cpuset));
 
 	long double from = INTEGRATE_FROM;
-	long double to   = INTEGRATE_TO;
+	long double to = INTEGRATE_TO;
 	long double step = INTEGRATE_STEP;
 	long double result;
 	size_t n_steps = (to - from) / step;
 
-	if (integrate_multicore_scalable(n_threads, &cpuset,
-		n_steps, from, step, &result) == -1) {
+	if (integrate_multicore_scalable(n_threads, &cpuset, n_steps, from,
+					 step, &result) == -1) {
 		perror("Error: integrate");
 		exit(EXIT_FAILURE);
 	}
